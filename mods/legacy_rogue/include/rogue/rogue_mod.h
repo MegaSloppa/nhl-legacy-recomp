@@ -1,0 +1,26 @@
+// Legacy Rogue - public entry points the host app calls (see docs/user-guide.md "Wiring"):
+//   rogue::Init(tunable_store);   // OnCreateDialogs, after the TunableRuntimeStore exists
+//   rogue::Tick();                // once per frame
+//   rogue::DrawPanel();           // inside the overlay window (Guide/F1)
+//   rogue::fx::Draw();            // every frame, even with the overlay closed (task FX-1)
+#pragma once
+namespace nhl::ui { class ITunableStore; }
+
+namespace rogue {
+struct GameStats;
+class TunablePatcher;
+
+void Init(nhl::ui::ITunableStore* store);
+void Tick();
+void DrawPanel();
+
+// Lifecycle. Called by hooks once addresses are known (addresses.h), or by the
+// panel's manual buttons until then.
+void OnBapGameStart();
+void OnBapGameEnd(const GameStats& final_stats);
+void OpenShop();  // between games
+
+// For rogue_hooks.cpp
+TunablePatcher* Patcher();
+bool InBapGame();
+}  // namespace rogue
