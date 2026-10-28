@@ -16,16 +16,26 @@ deliver zips of changed files laid out from the repo root. Unzip into
 - `src/nhllegacy_app.h`: `#include "rogue/rogue_mod.h"` and `rogue::Init(tunable_store_.get());`
   right after `tunable_store_` is created.
 - `renderer/core/nhl_overlay.cpp`: `#include "rogue/fx.h"` and `#include "rogue/rogue_mod.h"`.
-  In `OnDraw`: `rogue::fx::Draw();` before `if (!visible_) return;`, and `rogue::DrawPanel();`
-  inside the menu. `rogue::Tick();` should sit right after `rogue::fx::Draw();` (task BUILD-4).
+  In `OnDraw`: `rogue::fx::Draw(); rogue::Tick();` before `if (!visible_) return;`, and
+  `rogue::DrawPanel();` inside the menu.
 
 ## 3. Build and play
 
-Always use a **fresh Command Prompt** per build (see 7.6). Build:
-```bat
-cd /d "T:\git repos\nhl-legacy-recomp"
-scripts\_game_ffx_build.bat > build_log.txt 2>&1
-```
+Always use a **fresh Command Prompt** per build (see 7.6). Builds are incremental: only changed
+files and files that include a changed header are recompiled, then the exe is relinked.
+
+- Everyday code edits (fastest, build only):
+  ```bat
+  cd /d "T:\git repos\nhl-legacy-recomp"
+  scripts\_build_vkffx_incr.bat > build_log.txt 2>&1
+  ```
+- After any `CMakeLists.txt` change (e.g. an agent added a new .cpp file), or if unsure:
+  ```bat
+  scripts\_game_ffx_build.bat > build_log.txt 2>&1
+  ```
+- Close the game before building (a running exe cannot be replaced).
+- If a change seems to have no effect, check the log for
+  `Building CXX object ...<file>.cpp.obj`. If missing, re-save the file and rebuild.
 Launcher `run_dev.bat` in the repo root (git-ignored):
 ```bat
 @echo off
@@ -45,10 +55,15 @@ In game:
 Saves: `rogue_career.txt`, `rogue_meta.txt` next to the exe. Your real BAP save is never
 touched. Delete them to reset.
 
-**Smoke test (BUILD-3):** start a career, press Test FX: crit (gold CRITICAL! + flash),
-buy a perk, press BAP game started, then in Engine Tunables search the perk's tunable
-(e.g. `gTweakByGameStyleSlapShotPowerLevel` for Cannon) and check it shows as overridden.
-Check `rogue_career.txt` exists. Report what worked.
+**Smoke test (BUILD-3)** - report pass/fail for each:
+1. Career start: enter a name, click Start Legacy Rogue career. Perk Shop opens with a free pick.
+2. FX: press Test FX: crit, then close the menu at once. Gold CRITICAL! + flash stays ~1 s.
+3. Perk applies: take Cannon (or any non-curse perk), press BAP game started. In Engine Tunables
+   search the perk's setting (Cannon: `gTweakByGameStyleSlapShotPowerLevel`): orange
+   (overridden) and 1 above stock. The index needs ~12 s after boot; wait and search again.
+4. Revert: press BAP game ended. The setting returns to stock.
+5. Saves: `rogue_career.txt` and `rogue_meta.txt` exist in `out\build\win-amd64-vk-ffx\`.
+On a crash upload the newest `out\build\win-amd64-vk-ffx\logs\nhllegacy_NNN.log`.
 
 ## 4. Help the reverse engineering
 
@@ -121,4 +136,6 @@ Git, Python 3. Bootstrap order: `BOOTSTRAP.md` in the repo root.
 12. **"no member named 'FontSize' in 'ImFont'".** Newer ImGui: use `ImGui::GetFontSize()`.
 13. **"no member named 'Tick' in namespace 'rogue'".** Include `rogue/rogue_mod.h` where it is used.
 14. **SourceTree: "LF will be replaced by CRLF" warnings.** Harmless for mod files. But never let
-    `.bat` / `.ps1` files under `scripts\` change line endings (task BUILD-5).
+    `.bat` / `.ps1` files under `scripts\` change line endings. To restore one:
+    `git checkout 9d2ed9b -- scripts/<file>` (or `git fetch origin` then
+    `git checkout origin/master -- scripts/<file>`; there is no local `master` branch).

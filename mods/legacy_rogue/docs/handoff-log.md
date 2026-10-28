@@ -56,7 +56,7 @@ ScopedTunable only works if the consumer runs synchronously inside the hooked ca
   `rogue::Tick(); rogue::DrawPanel();` inside the visible block (Tick should move: BUILD-4).
 - Found an accidental CRLF->LF conversion of two parent scripts in 0213121 (BUILD-5).
 - GitHub writes (push_files, create_or_update_file) failed from the agent; read works.
-  Delivered these doc updates as a zip of changed files.
+  Delivered these doc updates as a zip of changed files; owner committed them in 87a6b59.
 **Files changed:** docs/current-status.md, docs/handoff-log.md, docs/00-START-HERE.md,
 docs/user-guide.md
 **Validation:** owner report: modded build PASS, game launches, Legacy Rogue section visible.
@@ -64,3 +64,22 @@ docs/user-guide.md
 `rogue_hooks.cpp` compiles with no addresses defined (all hooks `#if`'d out).
 **Hypotheses / unresolved:** runtime behavior of panel, tunable layering and saves unverified.
 **Next action:** BUILD-3, BUILD-4, BUILD-5 (owner); TUN-1 (agent).
+
+### 2026-10-28 (later) - Brenda - Verified fixes on GitHub; pre-break checkpoint
+**Objective:** Confirm the owner's follow-up commit and leave the docs ready for a context wipe.
+**Done:**
+- Read commit 87a6b59 on `legacy-rogue`: docs updated; `rogue::Tick();` now directly after
+  `rogue::fx::Draw();` before `if (!visible_) return;` in `NhlEnhancementsDialog::OnDraw`;
+  `rogue::DrawPanel();` inside the menu. BUILD-4 DONE.
+- Compared `scripts/` blob SHAs with upstream master: `_build_vkffx_incr.bat` and
+  `_c5renderdoc.ps1` identical again. BUILD-5 DONE. Only `_ffx_dll_build.bat` differs (intended).
+  Owner had no local `master` branch; restored from scaffold commit 9d2ed9b instead
+  (`git checkout 9d2ed9b -- <files>`; `origin/master` also works after `git fetch`).
+- Explained incremental builds; documented `_build_vkffx_incr.bat` (build only) vs
+  `_game_ffx_build.bat` (configure + build, needed after CMakeLists changes) in user-guide.
+**Files changed:** docs/current-status.md, docs/handoff-log.md, docs/user-guide.md,
+docs/00-START-HERE.md (delivered as zip; GitHub writes still fail from the agent).
+**Validation:** GitHub reads of commit 87a6b59, renderer/core/nhl_overlay.cpp and scripts/ SHAs.
+**Proven:** wiring is final; parent scripts clean.
+**Hypotheses / unresolved:** nothing about runtime behavior is verified yet.
+**Next action:** BUILD-3 smoke test (owner), TUN-1 (agent).

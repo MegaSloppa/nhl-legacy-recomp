@@ -86,9 +86,14 @@ Wiring in parent files (owner-maintained):
 - `src/nhllegacy_app.h`: `#include "rogue/rogue_mod.h"`; `rogue::Init(tunable_store_.get());`
   right after `tunable_store_` is created in `OnCreateDialogs`.
 - `renderer/core/nhl_overlay.cpp`: includes `rogue/fx.h` and `rogue/rogue_mod.h`. In
-  `NhlEnhancementsDialog::OnDraw`: `rogue::fx::Draw();` before `if (!visible_) return;`;
-  `rogue::Tick(); rogue::DrawPanel();` inside the visible block (BUILD-4 moves Tick up).
+  `NhlEnhancementsDialog::OnDraw`: `rogue::fx::Draw(); rogue::Tick();` before
+  `if (!visible_) return;` (every frame); `rogue::DrawPanel();` inside the menu.
 - Root `CMakeLists.txt`: `add_subdirectory(mods/legacy_rogue)`.
+
+Build commands (owner runs them; incremental via Ninja):
+- code edits only: `scripts\_build_vkffx_incr.bat`
+- after any CMakeLists.txt change (e.g. you added a .cpp to target_sources): `scripts\_game_ffx_build.bat`
+When you add a .cpp, say explicitly that the owner must use `_game_ffx_build.bat`.
 
 ## 5. Doc map
 

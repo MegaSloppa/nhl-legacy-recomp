@@ -5,8 +5,9 @@ Last updated: 2026-10-28 by Brenda. If this disagrees with another doc, this win
 ## Baseline
 
 - **The modded game builds and launches** on the owner's machine (2026-10-28, branch
-  `legacy-rogue` of `MegaSloppa/nhl-legacy-recomp`, commit 0f1a312). The Legacy Rogue section
-  appears in the overlay (Guide/F1).
+  `legacy-rogue` of `MegaSloppa/nhl-legacy-recomp`, latest verified commit 87a6b59). The Legacy
+  Rogue section appears in the overlay (Guide/F1). Wiring is final: `rogue::fx::Draw()` and
+  `rogue::Tick()` run every frame, `rogue::DrawPanel()` only while the menu is open.
 - Not yet verified in play: starting a career, buying a perk, a tunable actually changing,
   FX popups, save files. That is BUILD-3.
 - No guest addresses are known. All event perks are inert. Tunable perks, shop, Notoriety,
@@ -26,9 +27,9 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 |---|---|---|---|
 | BUILD-1 | Integrate into CMake + fix compile errors | U+A | DONE 2026-10-28. Sources go into the `nhllegacy` target via `target_sources` (00-START-HERE rule 9) |
 | BUILD-2 | Wiring lines in `src/nhllegacy_app.h` and `renderer/core/nhl_overlay.cpp` | U | DONE 2026-10-28 (commits 0213121, 0f1a312) |
-| BUILD-3 | Smoke test with `NHL_ROGUE=1`: start career, Test FX, buy a perk, press "BAP game started" and confirm an Engine Tunables value changed, confirm `rogue_career.txt` written next to the exe | U | ACTIVE (panel visible; rest untested) |
-| BUILD-4 | In `nhl_overlay.cpp`, move `rogue::Tick();` from the visible-overlay block to just after `rogue::fx::Draw();` (before `if (!visible_) return;`) so the tunable index builds and perks apply with the overlay closed | U | TODO |
-| BUILD-5 | Commit 0213121 converted `scripts/_build_vkffx_incr.bat` and `scripts/_c5renderdoc.ps1` from CRLF to LF by accident. Restore: `git checkout master -- scripts/_build_vkffx_incr.bat scripts/_c5renderdoc.ps1`, commit | U | TODO |
+| BUILD-3 | Smoke test with `NHL_ROGUE=1`, 5 checks in user-guide.md section 3 (career start, FX with menu closed, perk changes a tunable, revert on game end, save files) | U | NEXT (owner on a break 2026-10-28; panel visible, nothing else tested) |
+| BUILD-4 | Move `rogue::Tick();` before the overlay visibility early-return | U | DONE 2026-10-28 (87a6b59, verified on GitHub by Brenda) |
+| BUILD-5 | Restore CRLF on `scripts/_build_vkffx_incr.bat` and `scripts/_c5renderdoc.ps1` (accidentally converted in 0213121) | U | DONE 2026-10-28 (87a6b59; blob SHAs now identical to upstream master). Only `scripts/_ffx_dll_build.bat` intentionally differs from upstream (BUILD-6) |
 | BUILD-6 | `scripts/_ffx_dll_build.bat` generator changed to `Visual Studio 18 2026` (commit 34a34a3). Machine-specific; do not upstream. Portable fix = auto-detect the VS generator | A | TODO (low) |
 
 ### Tunable perks (no RE)
@@ -69,5 +70,18 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 
 ## Recommended next action
 
-Owner: BUILD-3 smoke test, BUILD-4 one-line move, BUILD-5 restore. Then RE-0.
-Agent: TUN-1 (repo data only), then the RE-1 probe set once RE-0 is uploaded.
+1. Owner: BUILD-3 smoke test; report each of the 5 checks (pass/fail + anything odd). On a
+   crash, upload the newest `out\build\win-amd64-vk-ffx\logs\nhllegacy_NNN.log`.
+2. Agent, while waiting or after: TUN-1 (needs only `docs/tunable_values_runtime.txt` and
+   `docs/tunables_schema.tsv` from the parent repo). Then prepare RE-0: check whether the owner
+   has a decompressed image; if not, give steps (`NHL_DUMP_IMAGE=1` runtime dump, see parent
+   `docs/sim-engine-re-plan.md`).
+3. Agent after BUILD-3 passes: write the RE-1 probe set (re-findings.md recipe).
+
+## How to verify the branch state without the owner
+
+Agents can READ GitHub: list commits on `MegaSloppa/nhl-legacy-recomp` branch `legacy-rogue`,
+read files from it, and compare blob SHAs against `puckhead73/nhl-legacy-recomp` master to spot
+accidental edits to parent files. Expected parent-file differences from upstream: root
+`CMakeLists.txt` (add_subdirectory), `src/nhllegacy_app.h`, `renderer/core/nhl_overlay.cpp`,
+`.gitignore` (run_dev.bat), `scripts/_ffx_dll_build.bat` (VS 2026). Anything else is suspect.
