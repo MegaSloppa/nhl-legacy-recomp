@@ -1,4 +1,5 @@
 #include "renderer/core/nhl_overlay.h"
+#include "rogue/fx.h"
 
 #include <imgui.h>
 
@@ -159,6 +160,7 @@ void NhlEnhancementsDialog::OnDraw(ImGuiIO& io) {
   // running but ignores the pad — see src/input_block.cpp). Set every frame so it
   // clears as soon as the overlay closes.
   nhl::g_block_guest_input.store(visible_, std::memory_order_relaxed);
+  rogue::fx::Draw();
   if (!visible_) {
     return;
   }
@@ -181,6 +183,8 @@ void NhlEnhancementsDialog::OnDraw(ImGuiIO& io) {
     ImGui::TextColored(ImVec4(0.5f, 0.85f, 1.0f, 1.0f),
                        "\xE2\x8F\xB8 Game input is paused while this menu is open.");
     ImGui::Separator();
+	rogue::Tick();
+	rogue::DrawPanel();
 
     // --- Performance HUD (live, from the Vulkan IssueSwap tap) ---
     if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen)) {

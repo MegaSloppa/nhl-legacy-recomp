@@ -54,6 +54,7 @@
 #include "tunable_runtime.h"
 #include "union_device.h"
 #include "anim_decode.h"
+#include "rogue/rogue_mod.h"
 
 // Runtime cvar (defined in rexruntime): when true, guest page 0 is
 // no-access. NHL Legacy's file-registration code (sub_82705510) walks an
@@ -605,6 +606,7 @@ class NhllegacyApp : public rex::ReXApp {
       };
       tunable_store_ =
           std::make_unique<nhllegacy::TunableRuntimeStore>(std::move(vbase_provider));
+		  rogue::Init(tunable_store_.get());
       // If nhl_tunables.json already has saved overrides, kick the build after a
       // registration delay so they re-apply even if the overlay is never opened.
       if (std::filesystem::exists(nhllegacy::TunablesOverridePath())) {
