@@ -213,7 +213,6 @@ else()
 endif()
 
 add_subdirectory(mods/legacy_rogue)
-target_link_libraries(nhllegacy PRIVATE legacy_rogue)
 
 # End-user packager CLI (disc dump -> playable install). See tools/packager/.
 # Windows-only for now: it ships the Windows port binaries and uses a wide

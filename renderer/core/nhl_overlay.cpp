@@ -1,5 +1,6 @@
 #include "renderer/core/nhl_overlay.h"
 #include "rogue/fx.h"
+#include "rogue/rogue_mod.h"
 
 #include <imgui.h>
 

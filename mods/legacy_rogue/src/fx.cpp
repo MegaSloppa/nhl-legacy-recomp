@@ -61,7 +61,7 @@ void Draw() {
                         (ImU32(255 * it->s.flash_alpha * (1.f - age / 0.15f)) << 24));
     const float scale = 2.6f + 1.2f * (1.f - k) * (age < 0.2f ? 1.f : 0.f);
     ImFont* f = ImGui::GetFont();
-    const float sz = f->FontSize * scale;
+    const float sz = ImGui::GetFontSize() * scale;
     ImVec2 tsz = f->CalcTextSizeA(sz, FLT_MAX, 0.f, it->text.c_str());
     ImU32 col = (it->s.color & 0x00FFFFFF) | (ImU32(255 * std::min(1.f, k * 2.f)) << 24);
     dl->AddText(f, sz, {ds.x * 0.5f - tsz.x * 0.5f + 3, y + 3}, IM_COL32(0, 0, 0, 180 * k), it->text.c_str());
