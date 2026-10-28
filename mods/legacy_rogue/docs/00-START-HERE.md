@@ -1,6 +1,6 @@
 # 00 - Start here (agent onboarding)
 
-Last reviewed: 2026-10-27 by Brenda (monday.com agent). Treat file/line references as hints;
+Last reviewed: 2026-10-28 by Brenda (monday.com agent). Treat file/line references as hints;
 verify against current source.
 
 ## 1. What this is
@@ -15,6 +15,9 @@ Legacy Rogue lives at `mods/legacy_rogue/` and adds, to Be-A-Pro (BAP) only:
 - **Notoriety**: a heat meter that makes the league react to a superhuman player.
 - **Legacy**: permanent meta-progression across careers.
 One run == one entire BAP career. Full design: `design.md`.
+
+Repo: `MegaSloppa/nhl-legacy-recomp`, branch `legacy-rogue` (fork of
+`puckhead73/nhl-legacy-recomp`). Owner's local path: `T:\git repos\nhl-legacy-recomp`.
 
 ## 2. The three mechanisms the mod uses
 
@@ -46,13 +49,25 @@ Key trick: most tunables are global (they buff everyone). Make them per-player b
    (e.g. Brenda) have no local build. In that case: write code + probe hooks, hand the user
    exact build/run/upload steps, and record results when they come back.
 8. **Update `current-status.md` and `handoff-log.md` before you stop.**
+9. **CMake: the mod is compiled INTO the `nhllegacy` target** via `target_sources` in
+   `mods/legacy_rogue/CMakeLists.txt` (root calls `add_subdirectory(mods/legacy_rogue)` after
+   the target exists). Never make it a separate library again: it would lose the game's include
+   paths and compile definitions (REX_HAS_VULKAN, REX_HAS_FIDELITYFX_SDK, ...), which change SDK
+   class layouts. New .cpp files must be added to that `target_sources` list.
+10. **ImGui is 1.92+.** Old APIs such as `ImFont::FontSize` are gone; use `ImGui::GetFontSize()`.
+    Check the vendored imgui headers before using an API from memory.
+11. **Line endings:** `.bat`, `.cmd`, `.ps1` must stay CRLF (parent `.gitattributes`); LF `.bat`
+    files break cmd `^` continuations. Do not touch parent scripts.
+12. **Deliver only files under `mods/legacy_rogue/`** unless a task says otherwise. Parent-file
+    wiring is edited by the owner. If GitHub writes fail, ship a zip of CHANGED files only,
+    laid out from the repo root (`mods/legacy_rogue/...`), so it unzips straight over the repo.
 
 ## 4. File map
 
 ```
 mods/legacy_rogue/
   AGENTS.md, CLAUDE.md          entry points for agents
-  CMakeLists.txt                OBJECT lib linked into the nhllegacy target
+  CMakeLists.txt                target_sources(nhllegacy ...) - see rule 9
   include/rogue/
     tunable_patch.h             TunablePatcher (layered mods) + ScopedTunable
     perks.h                     PerkDef, Scope, EventKind
@@ -66,6 +81,14 @@ mods/legacy_rogue/
   tools/perk_candidates.py      tunable search by theme
   docs/                         this folder
 ```
+
+Wiring in parent files (owner-maintained):
+- `src/nhllegacy_app.h`: `#include "rogue/rogue_mod.h"`; `rogue::Init(tunable_store_.get());`
+  right after `tunable_store_` is created in `OnCreateDialogs`.
+- `renderer/core/nhl_overlay.cpp`: includes `rogue/fx.h` and `rogue/rogue_mod.h`. In
+  `NhlEnhancementsDialog::OnDraw`: `rogue::fx::Draw();` before `if (!visible_) return;`;
+  `rogue::Tick(); rogue::DrawPanel();` inside the visible block (BUILD-4 moves Tick up).
+- Root `CMakeLists.txt`: `add_subdirectory(mods/legacy_rogue)`.
 
 ## 5. Doc map
 

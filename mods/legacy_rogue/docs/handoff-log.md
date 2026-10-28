@@ -37,3 +37,30 @@ no-op in the rebuilt runtime (present_grade_compat.cpp), so FX use ImGui instead
 **Hypotheses / unresolved:** human/CPU tunable split may also govern AI teammates (TUN-2).
 ScopedTunable only works if the consumer runs synchronously inside the hooked call.
 **Next action:** owner BUILD-1..3 and RE-0; agent TUN-1, FX-1.
+
+### 2026-10-28 - Brenda - Build bring-up on the owner's machine; first modded build
+**Objective:** Get the parent project and then the mod building from a clean machine.
+**Done (owner ran every command; agent diagnosed from logs):**
+- Toolchain: VS Build Tools 2026 (not 2022), standalone LLVM, CMake, Ninja, Vulkan SDK,
+  PowerShell 7. Every setup problem and its fix is in user-guide.md section 7.
+- Vanilla game built and launched, then the mod.
+- Mod build fixes (committed by the owner in 0f1a312):
+  - `mods/legacy_rogue/CMakeLists.txt`: sources go into the `nhllegacy` target via
+    `target_sources`. The previous separate OBJECT library could not see imgui, the rex SDK
+    headers or `generated/`, and lacked the game's compile definitions (REX_HAS_VULKAN etc.,
+    an ABI hazard). Root CMakeLists no longer links `legacy_rogue`.
+  - `src/fx.cpp`: `ImFont::FontSize` is gone in this ImGui (1.92+); use `ImGui::GetFontSize()`.
+  - `renderer/core/nhl_overlay.cpp`: also include `rogue/rogue_mod.h`.
+- Reviewed the owner's wiring on GitHub: `rogue::Init` after `tunable_store_` creation in
+  nhllegacy_app.h; `rogue::fx::Draw()` before the overlay visibility early-return (FX-1);
+  `rogue::Tick(); rogue::DrawPanel();` inside the visible block (Tick should move: BUILD-4).
+- Found an accidental CRLF->LF conversion of two parent scripts in 0213121 (BUILD-5).
+- GitHub writes (push_files, create_or_update_file) failed from the agent; read works.
+  Delivered these doc updates as a zip of changed files.
+**Files changed:** docs/current-status.md, docs/handoff-log.md, docs/00-START-HERE.md,
+docs/user-guide.md
+**Validation:** owner report: modded build PASS, game launches, Legacy Rogue section visible.
+**Proven:** all 7 mod .cpp files compile against SDK bd9b519 + title patch with clang.
+`rogue_hooks.cpp` compiles with no addresses defined (all hooks `#if`'d out).
+**Hypotheses / unresolved:** runtime behavior of panel, tunable layering and saves unverified.
+**Next action:** BUILD-3, BUILD-4, BUILD-5 (owner); TUN-1 (agent).

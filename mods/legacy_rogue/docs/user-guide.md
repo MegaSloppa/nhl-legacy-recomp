@@ -1,85 +1,124 @@
 # User guide (for Cherlyn)
 
 You do the parts that need your PC and the game. Agents do the code and the analysis.
+Last updated 2026-10-28.
 
-## 1. Put the mod in your repo (once)
+## 1. Repo setup (done)
 
-The agent could not fork or push from its connected GitHub account, so do this yourself:
+Fork: `MegaSloppa/nhl-legacy-recomp`, branch `legacy-rogue`, local path
+`T:\git repos\nhl-legacy-recomp`. Agents can read the branch on GitHub but cannot push yet; they
+deliver zips of changed files laid out from the repo root. Unzip into
+`T:\git repos\nhl-legacy-recomp` and allow overwrite, then review and commit in SourceTree.
 
+## 2. Wiring (done; for reference)
+
+- Root `CMakeLists.txt`: `add_subdirectory(mods/legacy_rogue)` (no `target_link_libraries` line).
+- `src/nhllegacy_app.h`: `#include "rogue/rogue_mod.h"` and `rogue::Init(tunable_store_.get());`
+  right after `tunable_store_` is created.
+- `renderer/core/nhl_overlay.cpp`: `#include "rogue/fx.h"` and `#include "rogue/rogue_mod.h"`.
+  In `OnDraw`: `rogue::fx::Draw();` before `if (!visible_) return;`, and `rogue::DrawPanel();`
+  inside the menu. `rogue::Tick();` should sit right after `rogue::fx::Draw();` (task BUILD-4).
+
+## 3. Build and play
+
+Always use a **fresh Command Prompt** per build (see 7.6). Build:
 ```bat
-:: on GitHub: open github.com/puckhead73/nhl-legacy-recomp and click Fork
-git clone https://github.com/<you>/nhl-legacy-recomp.git
-cd nhl-legacy-recomp
-git checkout -b legacy-rogue
-:: unzip legacy_rogue_scaffold.zip, then move the legacy_rogue folder to mods\legacy_rogue
-git add mods/legacy_rogue
-git commit -m "Add Legacy Rogue scaffold"
-git push -u origin legacy-rogue
+cd /d "T:\git repos\nhl-legacy-recomp"
+scripts\_game_ffx_build.bat > build_log.txt 2>&1
 ```
-If you already have a local working tree, just copy the folder to `mods\legacy_rogue` there.
-
-To let an agent push for you later: reconnect GitHub with write access to the fork (contents
-read and write). Then an agent can commit doc and code updates to the `legacy-rogue` branch.
-
-## 2. Wiring (4 lines, once)
-
-1. Root `CMakeLists.txt`, after the `nhllegacy` target is defined:
-   ```cmake
-   add_subdirectory(mods/legacy_rogue)
-   target_link_libraries(nhllegacy PRIVATE legacy_rogue)
-   ```
-2. `src/nhllegacy_app.h`: `#include "rogue/rogue_mod.h"`, then in `OnCreateDialogs` right
-   after the tunable store is created: `rogue::Init(<the store pointer>);`
-3. `renderer/core/nhl_overlay.cpp`, inside the overlay window draw:
-   `rogue::Tick(); rogue::DrawPanel();`
-4. Same file, somewhere that runs every frame even when the overlay is closed:
-   `#include "rogue/fx.h"` and `rogue::fx::Draw();` (if unsure, put it next to line 3 for now).
-
-Build as usual: `scripts\_game_ffx_build.bat`. If it fails, copy the error lines into a chat
-with an agent and say "BUILD-1 errors".
-
-## 3. Play
-
+Launcher `run_dev.bat` in the repo root (git-ignored):
 ```bat
-set NHL_ROGUE=1
+@echo off
 set NHL_VK_BACKEND=1
-out\build\win-amd64-vk-ffx\nhllegacy.exe --game_data_root "H:\...\NHL Legacy - Vanilla"
+set NHL_ROGUE=1
+"%~dp0out\build\win-amd64-vk-ffx\nhllegacy.exe" --game_data_root "T:\nhl-legacy-recomp-0.6.0\game\game"
 ```
-1. Open the overlay (Guide button or F1), open **Legacy Rogue (Be-A-Pro)**.
+In game:
+1. Open the overlay (Guide or F1), open **Legacy Rogue (Be-A-Pro)**.
 2. Type a career name, click **Start Legacy Rogue career**, take your free perk.
-3. Before a BAP game, click **BAP game started**. (Hooks will do this automatically later.)
-4. After the game, enter your G / A / Hits / +/- and win or loss, click **BAP game ended**.
-   Hype and Notoriety update and the Perk Shop opens.
-5. Optional sounds: put WAV files named crit, knockdown, shockwave, perk, tier, milestone
-   (`.wav`) in `<exe folder>\rogue\sfx\`.
+3. Before a BAP game click **BAP game started**. (Hooks will do this automatically later.)
+4. After the game enter G / A / Hits / +/- and won/lost, click **BAP game ended**. Hype and
+   Notoriety update and the Perk Shop opens.
+5. Optional sounds: WAVs named crit, knockdown, shockwave, perk, tier, milestone (`.wav`) in
+   `<exe folder>\rogue\sfx\`.
 
-Save files: `rogue_career.txt` and `rogue_meta.txt` next to the exe. Your real BAP save is
-never touched. Delete those two files to reset.
+Saves: `rogue_career.txt`, `rogue_meta.txt` next to the exe. Your real BAP save is never
+touched. Delete them to reset.
 
-## 4. Help the reverse engineering (makes event perks and auto-tracking work)
+**Smoke test (BUILD-3):** start a career, press Test FX: crit (gold CRITICAL! + flash),
+buy a perk, press BAP game started, then in Engine Tunables search the perk's tunable
+(e.g. `gTweakByGameStyleSlapShotPowerLevel` for Cannon) and check it shows as overridden.
+Check `rogue_career.txt` exists. Report what worked.
 
-RE-0, once:
+## 4. Help the reverse engineering
+
+RE-0 needs the decompressed game image `default.decompressed.exe`. If you do not have one,
+an agent will give you the steps to create it (runtime dump with `NHL_DUMP_IMAGE=1`). Then:
 ```bat
-python mods\legacy_rogue\tools\find_bap_code.py "H:\Emulators\games\XBOX\default.decompressed.exe" --generated generated\default --out mods\legacy_rogue\docs\bap_hits.txt
+python mods\legacy_rogue\tools\find_bap_code.py "<path>\default.decompressed.exe" --generated generated\default --out mods\legacy_rogue\docs\bap_hits.txt
 ```
-Upload `bap_hits.txt` to the agent chat.
-
-Probe rounds (3 to 5 of them): the agent sends you a probe file plus a short script, e.g.
-"start a BAP game, make 3 big hits 10 seconds apart, then quit". You build with
-`NHL_ROGUE_PROBE=1`, do the script, and upload `rogue_probe.txt` from the exe folder.
+Upload `bap_hits.txt`. Probe rounds (3 to 5): the agent sends a probe file plus a short
+script ("start a BAP game, make 3 big hits 10 s apart, quit"). Build, run with
+`set NHL_ROGUE_PROBE=1`, do the script, upload `rogue_probe.txt` from the exe folder.
 
 ## 5. Starting a fresh agent session
 
-Paste this:
+Paste:
 
-> You are continuing work on Legacy Rogue (mods/legacy_rogue in my nhl-legacy-recomp fork).
-> Read mods/legacy_rogue/AGENTS.md and follow it. Then do task <ID> from
-> docs/current-status.md. Attached: <files>. Update current-status.md and handoff-log.md
-> before you finish, and give me the updated files.
-
-If the agent cannot push to GitHub, it gives you a zip or the changed files; copy them in and
-commit.
+> You are continuing work on Legacy Rogue: repo MegaSloppa/nhl-legacy-recomp, branch
+> legacy-rogue, folder mods/legacy_rogue. Read mods/legacy_rogue/AGENTS.md and follow it. Then do
+> task <ID> from docs/current-status.md. Attached: <files>. Before finishing, update
+> current-status.md and handoff-log.md and give me a zip of only the changed files, laid out
+> from the repo root.
 
 ## 6. Decisions waiting on you
 
 - DES-1: win/loss structure. Options in `design.md` section 6 (recommended: A + B).
+
+## 7. Troubleshooting: every setup problem hit so far
+
+Prerequisites that worked: VS Build Tools 2026 (C++ workload), standalone LLVM
+(`winget install LLVM.LLVM`, clang 20+), CMake + Ninja (`winget install Kitware.CMake
+Ninja-build.Ninja`), LunarG Vulkan SDK, PowerShell 7 (`winget install Microsoft.PowerShell`),
+Git, Python 3. Bootstrap order: `BOOTSTRAP.md` in the repo root.
+
+1. **`setup_sdk.ps1`: "reference is not a tree: bd9b519..."** The pinned SDK commit is not on
+   a branch, so clone skips it. Fix:
+   `git -C third_party\rexglue-sdk fetch origin bd9b51918faa71f962fa38af6d5f744af9aba2ce`,
+   then re-run the script.
+2. **`setup_sdk.ps1` dies at `git apply --check` (NativeCommandError).** Windows PowerShell 5.1
+   treats git stderr as fatal. Run with PowerShell 7: `pwsh -ExecutionPolicy Bypass -File
+   scripts\setup_sdk.ps1`.
+3. **"patch does not apply" / "patch failed: cmake/rexglue_fidelityfx.cmake:103".** Line endings.
+   SDK clone: `git -C third_party\rexglue-sdk config core.autocrlf false`,
+   `git -C third_party\rexglue-sdk rm -r -q --cached .`, `git -C third_party\rexglue-sdk reset
+   --hard`. Patch files: convert `sdk\*.patch` to LF (PowerShell:
+   `[IO.File]::WriteAllText($f, ([IO.File]::ReadAllText($f) -replace "`r`n","`n"))`). Optional
+   global fix: `git config --global core.autocrlf false`.
+4. **"vcvars64.bat not found" with VS 2026.** `_env.bat` only searches VS 2022 folders. Find the
+   file: `"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest
+   -products * -find VC\Auxiliary\Build\vcvars64.bat`, then `set "VCVARS64=<path>"` (quotes around
+   the whole assignment) or `setx VCVARS64 "<path>"` (quotes around the path only).
+5. **"The filename, directory name, or volume label syntax is incorrect."** `VCVARS64` contains
+   quote marks. Check with `echo [%VCVARS64%]`; set it again as in 4.
+6. **"The input line is too long."** Every script re-runs vcvars and grows PATH. Open a new
+   Command Prompt (re-set `VCVARS64` if you did not use `setx`).
+7. **`_ffx_dll_build.bat`: "Generator Visual Studio 17 2022 could not find any instance".** Change
+   it to `-G "Visual Studio 18 2026"` (needs CMake 4.2+), delete `%USERPROFILE%\_ffxbuild\vk`,
+   re-run. Alternative: install VS 2022 Build Tools alongside. (Local change; do not upstream.)
+8. **Codegen:** edit `nhllegacy_manifest.toml` `game_root` / `file_path` to your vanilla xex
+   (forward slashes). Do not commit it. Then
+   `third_party\rexglue-sdk\out\install\win-amd64-ffx\bin\rexglue.exe codegen nhllegacy_manifest.toml`.
+9. **Game: "amd_fidelityfx_vk.dll" missing.** `copy /y
+   third_party\rexglue-sdk\out\install\win-amd64-ffx\bin\amd_fidelityfx_vk.dll
+   out\build\win-amd64-vk-ffx\` (or from `third_party\rexglue-sdk\out\ffx-prebuilt\vk\`).
+10. **Game shows black window ~5 s then closes; log says "--game_data_root was not provided".**
+    Pass `--game_data_root` (the folder with `default.xex` and `_compiled`), or link it once:
+    `mklink /J "out\build\win-amd64-vk-ffx\game" "T:\nhl-legacy-recomp-0.6.0\game\game"`.
+    Logs: `out\build\win-amd64-vk-ffx\logs\nhllegacy_NNN.log` (newest = highest number).
+11. **Mod build: `imgui.h` / `rex/filesystem.h` / `rex/ppc.h` not found.** The mod must compile
+    into the `nhllegacy` target (`target_sources`), not as its own library. Fixed in 0f1a312.
+12. **"no member named 'FontSize' in 'ImFont'".** Newer ImGui: use `ImGui::GetFontSize()`.
+13. **"no member named 'Tick' in namespace 'rogue'".** Include `rogue/rogue_mod.h` where it is used.
+14. **SourceTree: "LF will be replaced by CRLF" warnings.** Harmless for mod files. But never let
+    `.bat` / `.ps1` files under `scripts\` change line endings (task BUILD-5).
