@@ -1,6 +1,6 @@
 # Current status (AUTHORITATIVE)
 
-Last updated: 2026-10-29 by Victoria (monday.com agent). If this disagrees with another doc,
+Last updated: 2026-10-29 (later) by Victoria (monday.com agent). If this disagrees with another doc,
 this wins; fix the other doc.
 
 ## Baseline
@@ -11,9 +11,10 @@ this wins; fix the other doc.
 - **BUILD-3 smoke test PASSED 2026-10-29** (owner, commit 3d595fe): career start, FX with the
   menu closed, perk layers write the store (13 -> 14), revert at game end (back to 13), save
   files. Hype 80 / Notoriety 61 for G2 A1 Hits3 +/-2 Won, exactly as computed from run_state.cpp.
-- **Tunable perks currently have NO gameplay effect (proven for one setting, hypothesis for
-  the rest).** See TUN-4. The mod's layering works; what it writes is most likely not the value
-  the game reads. Do not tune perk numbers until TUN-4 is resolved.
+- **Tunable perks currently have NO gameplay effect**: the parent store and therefore
+  `TunablePatcher` write the object's TYPE TAG (N+8). **The live value is N+32 (+ heap copy H+36),
+  CONFIRMED by TUN-5b** (slap shot power and LOD changed immediately). TUN-6 moves the patcher
+  there. Until then do not use tunable perks in real play (they rewrite type tags).
 - No guest addresses are known. All event perks are inert. Shop, Notoriety, FX and saves are
   driven by the panel's Manual buttons.
 - Owner's toolchain: VS Build Tools 2026 + standalone LLVM + Vulkan SDK + PowerShell 7.
@@ -21,7 +22,7 @@ this wins; fix the other doc.
 - GitHub: agents can READ the fork but writes fail from the agent's connection (as of
   2026-10-28). Deliver changes as a zip of changed files only.
 
-## Key finding 2026-10-29 (TUN-4): record+8 is probably a type tag, not the value
+## Key finding 2026-10-29 (TUN-4): record+8 is a type tag, not the value (PROVEN by probe)
 
 Proven:
 - In `docs/tunable_values_runtime.txt` the 11,158 resolved `field+8` values collapse to a few
@@ -35,8 +36,10 @@ Proven:
 - Owner test 2026-10-29, in a match: `gTweakByGameStyleGameSpeedLevel` 13 -> 0 and 13 -> 20 had
   no visible effect; the game's own speed setting did not change the 13; a whistle did not
   reset the edit (so the value is neither read live nor rewritten).
-Hypothesis (unproven): `record+8` is a type/kind tag of the tweak record; the live value is at
-another offset or behind a pointer in the record (e.g. the `gXxx` global in .data). This would
+Probe result (owner run, 3 snapshots): record+8 matches the object's type-class pointer for all 7
+objects decoded; the value lives at record+20 (min +24, max +28, default +32) plus a heap copy.
+Full layout and evidence: re-findings.md. Still unproven: which copy the game reads, and whether
+writing it changes gameplay (TUN-5). This would
 affect the parent project's Engine Tunables editor for nearly every entry (its live-effect test
 is still listed as pending in `docs/engine-settings-editor-plan.md`). Parent files are NOT
 changed by this mod (rule 12); report to the owner once proven.
@@ -57,7 +60,7 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 | BUILD-4 | Move `rogue::Tick();` before the overlay visibility early-return | U | DONE 2026-10-28 (87a6b59) |
 | BUILD-5 | Restore CRLF on two parent scripts | U | DONE 2026-10-28 (87a6b59) |
 | BUILD-6 | `scripts/_ffx_dll_build.bat` generator `Visual Studio 18 2026` (34a34a3). Machine-specific; do not upstream. Portable fix = auto-detect the VS generator | A | TODO (low) |
-| BUILD-7 | Build + verify the 2026-10-29 package (new file `src/rogue_probe.cpp` -> `scripts\_game_ffx_build.bat`) | U | NEXT |
+| BUILD-7 | Build + verify the 2026-10-29 package (probe + BUG-1/2) | U | DONE 2026-10-29 (commit 316c3a1; probe ran) |
 
 ### Bugs
 | ID | Bug | Status |
@@ -68,9 +71,16 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 ### Tunable perks (no RE)
 | ID | Task | Who | Status |
 |---|---|---|---|
-| TUN-4 | Find where a tweak record's live value really is (see Key finding). Probe `src/rogue_probe.cpp` delivered; owner runs 3 snapshots, uploads `rogue_probe.txt` (user-guide section 4a). Agent then pins the offset/pointer, re-tests with one obvious setting, and moves `TunablePatcher` to it | U then A | ACTIVE (owner run) |
-| TUN-1 | Stock values + ranges for every tunable the perks use; fix step sizes in perk_catalog.cpp / reactions.cpp. Note: the schema's 0..20 slider ranges are inferred, not proven | A then U | BLOCKED (TUN-4) |
-| TUN-2 | Do AI TEAMMATES read *Level or *LevelCPU in BAP? | U | BLOCKED (TUN-4) |
+| TUN-4 | Find where a tweak record's live value really is | U then A | DONE 2026-10-29: layout decoded (re-findings.md, OBSERVED) |
+| TUN-5 | Write test: `gSlapShotPowerMultiplier`, `gMomentumPhysicsImpulse`, `gHitTune_GlobalScale` at x0.2 / x3 / x10 of stock, both copies (user-guide 4b) | U | DONE 2026-10-29: writes landed (log), NO visible effect in a BAP match (live edit) or an exhibition (x10 set at the menu before the match). x0.2 slap power should have been obvious. Hits were hard to judge |
+| TUN-8 | Static scan of generated code for references to each tweak object / table (`tools/find_tweak_consumers.py`) | U then A | DONE 2026-10-29: real code loads base+40 = N+32 (not N+20); game-style values are read through the heap copy's table (sub_829F8A20). `gSlapShotPowerMultiplier` and `gMomentumPhysicsImpulse` have no static reader. See re-findings.md |
+| TUN-5b | Write test on the field real code reads (N+32 + heap copy H+36) | U | DONE 2026-10-29: **N+32 is the live value (CONFIRMED)**. `gSlapShotPowerScale` x0.2 = limp slap shots, x10 (its own max is 2.0) = very fast; `gLODShader` 0/2 changed rendering at once. Effects are immediate in a match. Game-style tables (all entries 0/20): no visible effect. `gHitTune_GlobalScale` x10: nothing seen (big hits hard to land) |
+| TUN-5c | Write test round 3: `gSlapShotPowerScale` x30, hit force (`gHitPowerForPhysicsGlobalModifier`, `...RatingModifier`), fall thresholds (`gBalanceOffpuckFallThreshold`, `gBalanceCarrierFallThreshold`), check reach (`gHumanTriggerCheckDist`, `gHipCheckRadiusMax`), `gPenaltyChanceCharging` (user-guide 4b) | U | NEXT |
+| TUN-9 | Full catalog of every tweak object with its real live value (panel "Dump tweak catalog" -> `rogue_tweak_catalog.tsv`) + static reader count per tunable (`find_tweak_consumers.py --catalog`) -> perk candidate list. Replaces TUN-1 | U then A | NEXT |
+| TUN-6 | (unblocked) Rewrite `TunablePatcher` to write values (N+32 + heap copy H+36; tables via H+32) by type: float, int, bool, game-style table (tag 13), indexed slider (tag 12). Convert perk_catalog.cpp to real-value mods | A after TUN-5 | TODO |
+| TUN-7 | (low; TUN-5b showed no effect, probably presets applied elsewhere) Game-style tables (tag 13): which entry is the active style, and what range a level has (seen: GameSpeed 5/4/3, SlapShotPower 5/4/4, WristShotAccuracy 6/5/3) | A+U | TODO |
+| TUN-1 | Stock values + ranges for every tunable the perks use (the object itself stores min/max/default, see re-findings.md); fix step sizes | A then U | BLOCKED (TUN-6) |
+| TUN-2 | Do AI TEAMMATES read *Level or *LevelCPU in BAP? | U | BLOCKED (TUN-6) |
 | TUN-3 | Which tunables are rewritten every frame | U | PARTIAL: `gTweakByGameStyleGameSpeedLevel` record+8 is NOT rewritten (survives whistles). Redo per setting after TUN-4 |
 
 ### Reverse engineering (ledger: re-findings.md)
@@ -86,6 +96,8 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 | RE-7 | BAP career save identity | A+U | TODO |
 | RE-8 | BAP progression storage (lead: `BAP_PLAYER_GROWTH` @ 0x82035818) | A+U | TODO |
 | RE-9 | Meta reactions: contracts, trades, line promotion, task grading | A+U | TODO |
+| RE-10 | Penalty call decision (for a "no checking penalties" perk): find where an infraction becomes a called penalty and its offender register | A+U | TODO |
+| RE-11 | BAP player's live ratings in memory (for perks that push attributes past 99) | A+U | TODO |
 
 ### Feedback effects
 | ID | Task | Who | Status |
@@ -104,13 +116,13 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 
 ## Recommended next action
 
-1. Owner: BUILD-7 (apply zip, `scripts\_game_ffx_build.bat`, verify BUG-1 and BUG-2 fixes),
-   then TUN-4 probe run (user-guide section 4a), upload `rogue_probe.txt`.
-2. Agent: read `rogue_probe.txt`. Look for a record word that differs from 4/13 and matches the
-   expected type (0.2 float for `gDekeRatEffect`, ~1.0 for multipliers), or a pointer whose
-   target does. Compare the menu / in-match / after-edit snapshots. Write the result to
-   `re-findings.md` with evidence + confidence, then a one-setting live test for the owner.
-3. Meanwhile any agent: RE-0 prep (decompressed image steps, user-guide section 4).
+1. Owner: apply the zip (incremental build), press "Dump tweak catalog" once at the menu, run
+   `find_tweak_consumers.py --catalog ...`, run TUN-5c, upload `rogue_tweak_catalog.tsv`,
+   `tweak_readers.tsv`, `rogue_probe.txt` and describe what each TUN-5c button did.
+2. Agent: TUN-6 (TunablePatcher writes N+32 + H+36, reads stock from N+32, never touches N+8),
+   then rebuild perk_catalog.cpp from the readers list with real stock values and ranges.
+   Note: game code does not clamp to the object's own min/max (SlapShotPowerScale x10 > max 2).
+3. Then RE-0 / RE-1 for per-player perks.
 
 ## How to verify the branch state without the owner
 

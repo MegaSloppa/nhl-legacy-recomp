@@ -13,7 +13,8 @@
 // 16 bytes before and 48 bytes after it, and 16 bytes at every pointer found in the
 // record. Run it at the menu, in a match, and after an overlay edit, then diff.
 //
-// Read-only: never writes guest memory. Same committed-memory walk as the parent
+// Snapshots are read-only. The TUN-5 write test below is the only code that writes, and
+// only on a button press. Same committed-memory walk as the parent
 // TunableRuntimeStore::Build (src/tunable_runtime.h). Output: rogue_probe.txt next to
 // the exe, appended, one block per snapshot.
 #include "generated/default/nhllegacy_init.h"
@@ -215,9 +216,246 @@ const char* Status() {
   static char buf[128];
   switch (g_state.load()) {
     case 1: return "Scanning guest memory (can take up to a minute, game may stutter)...";
-    case 2: std::snprintf(buf, sizeof(buf), "Done in %u ms: appended to rogue_probe.txt", g_last_ms.load()); return buf;
+    case 2: std::snprintf(buf, sizeof(buf), "Done in %u ms (rogue_probe.txt / rogue_tweak_catalog.tsv)", g_last_ms.load()); return buf;
     case 3: return "Failed: guest memory not available or rogue_probe.txt could not be opened";
     default: return "Idle";
   }
+}
+
+// ---------------------------------------------------------------- write test (TUN-5b/5c)
+// TUN-5b RESULT (owner, 2026-10-29): N+32 IS the live value. gSlapShotPowerScale x0.2 made slap
+// shots limp, x10 (above its own max 2.0) made them very fast; gLODShader 0/2 changed rendering
+// immediately. Game-style tables (all entries 0/20) had no visible effect. TUN-5c targets below:
+// hit force, fall thresholds, check reach, one penalty chance, and higher slap-shot scales.
+// TUN-5 wrote N+20 and had no effect. TUN-8 static scan (2026-10-29): real code reads
+// base+40 = N+32 (gHitTune_GlobalScale in sub_83588BF8, gSlapShotPowerScale in sub_833E87E0,
+// gLODShader in sub_8361FA70, ...), and game-style values are read through the heap copy:
+// sub_829F8A20 loads H = *(N+36), then the table pointer *(H+32), then the entries.
+// HYPOTHESIS: N+32 is the live value (N+20 is probably the reset/default value; they are equal
+// at stock, which is why TUN-4 could not tell them apart). This test writes:
+//   scalar: image N+32 and heap H+36 (same field in the copy, whose name pointer is at H+4)
+//   table : every entry of the heap table *(H+32) and the static table *(N+24)
+// Every write is logged to rogue_probe.txt. Restore or restart to undo.
+namespace {
+enum class Kind { kScalar, kTable };  // scalar: float (tag 4) or int (tag 2), decided at lookup
+struct Preset { const char* label; bool mul; float v; };
+struct WriteTest {
+  const char* name;
+  Kind kind;
+  Preset p[3];
+  bool tried = false, found = false, active = false;
+  int n = 0;                 // number of patched words
+  uint32_t va[8] = {};       // guest addresses
+  bool raw[8] = {};          // true = image raw view, false = translated view
+  uint32_t stock[8] = {};
+  int last = -1;
+  bool is_float = true;
+};
+WriteTest g_wt[] = {
+  {"gSlapShotPowerScale", Kind::kScalar, {{"x3", true, 3.f}, {"x10", true, 10.f}, {"x30", true, 30.f}}},
+  {"gHitPowerForPhysicsGlobalModifier", Kind::kScalar, {{"x0.2", true, 0.2f}, {"x3", true, 3.f}, {"x10", true, 10.f}}},
+  {"gHitPowerForPhysicsRatingModifier", Kind::kScalar, {{"x0.2", true, 0.2f}, {"x3", true, 3.f}, {"x10", true, 10.f}}},
+  {"gBalanceOffpuckFallThreshold", Kind::kScalar, {{"x0.2", true, 0.2f}, {"x3", true, 3.f}, {"x10", true, 10.f}}},
+  {"gBalanceCarrierFallThreshold", Kind::kScalar, {{"x0.2", true, 0.2f}, {"x3", true, 3.f}, {"x10", true, 10.f}}},
+  {"gHumanTriggerCheckDist", Kind::kScalar, {{"x0.5", true, 0.5f}, {"x3", true, 3.f}, {"x10", true, 10.f}}},
+  {"gHipCheckRadiusMax", Kind::kScalar, {{"x0.5", true, 0.5f}, {"x3", true, 3.f}, {"x10", true, 10.f}}},
+  {"gPenaltyChanceCharging", Kind::kScalar, {{"=0", false, 0.f}, {"x3", true, 3.f}, {"x10", true, 10.f}}},
+};
+constexpr int kNumWt = int(sizeof(g_wt) / sizeof(g_wt[0]));
+
+uint8_t* VBase() {
+  auto* ks = rex::runtime::current_kernel_state();
+  return (ks && ks->memory()) ? ks->memory()->virtual_membase() : nullptr;
+}
+uint8_t* HostW(uint8_t* vb, uint32_t va) { return vb + va + REX_PHYS_HOST_OFFSET(va); }
+uint8_t* At(uint8_t* vb, const WriteTest& t, int k) {
+  return t.raw[k] ? vb + t.va[k] : HostW(vb, t.va[k]);
+}
+void StoreBe(uint8_t* p, uint32_t b) {
+  p[0] = uint8_t(b >> 24); p[1] = uint8_t(b >> 16); p[2] = uint8_t(b >> 8); p[3] = uint8_t(b);
+}
+uint32_t FBits(float f) { uint32_t b; std::memcpy(&b, &f, 4); return b; }
+float BitsF(uint32_t b) { float f; std::memcpy(&f, &b, 4); return f; }
+
+void LogWrite(const char* what, const WriteTest& t) {
+  const auto path = rex::filesystem::GetExecutableFolder() / "rogue_probe.txt";
+  if (FILE* f = std::fopen(path.string().c_str(), "a")) {
+    std::fprintf(f, "write-test-b tick=%lu %s %s:", (unsigned long)GetTickCount(), what, t.name);
+    if (uint8_t* vb = VBase())
+      for (int k = 0; k < t.n; ++k) std::fprintf(f, " %08X=%08X", t.va[k], Be(At(vb, t, k)));
+    std::fprintf(f, "\n");
+    std::fclose(f);
+  }
+}
+
+void Add(WriteTest& t, uint32_t va, bool raw, uint8_t* vb) {
+  t.va[t.n] = va; t.raw[t.n] = raw;
+  t.stock[t.n] = Be(raw ? vb + va : HostW(vb, va));
+  ++t.n;
+}
+
+bool Resolve(WriteTest& t) {
+  if (t.tried) return t.found;
+  uint8_t* vb = VBase();
+  if (!vb) return false;
+  t.tried = true;
+  const uint8_t* img = vb + kImgBase;
+  const uint32_t len = uint32_t(std::strlen(t.name));
+  uint32_t name_va = 0;
+  int count = 0;
+  for (uint32_t i = 1; i + len + 1 < kImgSize; ++i) {
+    if (img[i] != uint8_t(t.name[0]) || img[i - 1] != 0 || img[i + len] != 0) continue;
+    if (std::memcmp(img + i, t.name, len) != 0) continue;
+    name_va = kImgBase + i;
+    ++count;
+  }
+  if (count != 1) return false;
+  for (uint32_t o = 8; o + 40 <= kImgSize; o += 4) {
+    if (Be(img + o) != name_va) continue;
+    const uint32_t want_tag = Be(img + o + 8);
+    if (t.kind == Kind::kTable ? want_tag != 13u : (want_tag != 4u && want_tag != 2u)) continue;
+    t.is_float = want_tag == 4u;
+    const uint32_t vt = Be(img + o - 8);
+    if (vt < kImgBase || vt >= kImgBase + kImgSize) continue;
+    const uint32_t heap = Be(img + o + 36);
+    if (heap < 0x40000000u) continue;
+    uint8_t* h = HostW(vb, heap);
+    if (!Readable(h, 40) || Be(h) != want_tag || Be(h + 4) != name_va) continue;
+    const uint32_t n_va = kImgBase + o;
+    if (t.kind == Kind::kTable) {
+      const uint32_t cnt = Be(img + o + 20);
+      const uint32_t stat = Be(img + o + 24);
+      const uint32_t dyn = Be(h + 32);
+      if (cnt == 0 || cnt > 3 || stat < kImgBase || dyn < 0x40000000u) continue;
+      if (!Readable(HostW(vb, dyn), 4 * cnt)) continue;
+      for (uint32_t k = 0; k < cnt; ++k) Add(t, dyn + 4 * k, false, vb);
+      for (uint32_t k = 0; k < cnt; ++k) Add(t, stat + 4 * k, true, vb);
+    } else {
+      Add(t, n_va + 32, true, vb);   // image N+32 (base+40), the field real code loads
+      Add(t, heap + 36, false, vb);  // heap copy, same field
+    }
+    t.found = true;
+    return true;
+  }
+  return false;
+}
+}  // namespace
+
+int WriteTestCount() { return kNumWt; }
+const char* WriteTestName(int i) { return g_wt[i].name; }
+const char* WriteTestPresetLabel(int i, int p) { return g_wt[i].p[p].label; }
+
+bool WriteTestApply(int i, int p) {
+  if (!Enabled() || i < 0 || i >= kNumWt || p < 0 || p > 2) return false;
+  WriteTest& t = g_wt[i];
+  uint8_t* vb = VBase();
+  if (!vb || !Resolve(t)) return false;
+  const Preset& pr = t.p[p];
+  for (int k = 0; k < t.n; ++k) {
+    uint32_t bits;
+    if (t.kind == Kind::kScalar && t.is_float) bits = FBits(pr.mul ? BitsF(t.stock[k]) * pr.v : pr.v);
+    else bits = uint32_t(int32_t(pr.mul ? float(int32_t(t.stock[k])) * pr.v : pr.v));
+    StoreBe(At(vb, t, k), bits);
+  }
+  t.active = true;
+  t.last = p;
+  LogWrite(pr.label, t);
+  return true;
+}
+
+void WriteTestRestore(int i) {
+  if (i < 0 || i >= kNumWt) return;
+  WriteTest& t = g_wt[i];
+  uint8_t* vb = VBase();
+  if (!vb || !t.found || !t.active) return;
+  for (int k = 0; k < t.n; ++k) StoreBe(At(vb, t, k), t.stock[k]);
+  t.active = false;
+  t.last = -1;
+  LogWrite("restore", t);
+}
+
+void WriteTestRestoreAll() { for (int i = 0; i < kNumWt; ++i) WriteTestRestore(i); }
+
+void WriteTestDescribe(int i, char* buf, unsigned n) {
+  const WriteTest& t = g_wt[i];
+  uint8_t* vb = VBase();
+  if (!t.tried) { std::snprintf(buf, n, "not looked up yet (press a button)"); return; }
+  if (!t.found || !vb) { std::snprintf(buf, n, "NOT FOUND: layout check failed, nothing written"); return; }
+  int w = 0;
+  w += std::snprintf(buf + w, n - w, "live:");
+  for (int k = 0; k < t.n && w < int(n) - 24; ++k) {
+    const uint32_t b = Be(At(vb, t, k));
+    if (t.kind == Kind::kScalar && t.is_float) w += std::snprintf(buf + w, n - w, " %.3f", BitsF(b));
+    else w += std::snprintf(buf + w, n - w, " %d", int32_t(b));
+  }
+  if (w < int(n) - 24)
+    std::snprintf(buf + w, n - w, "%s", t.active ? "  | ACTIVE" : "  | stock");
+}
+
+// ---------------------------------------------------------------- TUN-9 catalog
+// Walks the image for every tweak object (signature: N -> "g..." name string, tag at N+8,
+// type class at N-8 inside the image, heap copy *(N+36) whose +4 is the same name pointer) and
+// writes rogue_tweak_catalog.tsv next to the exe: the real live value (N+32), N+20 and the
+// min/max at N+24/N+28. Read-only. Feeds tools/find_tweak_consumers.py --catalog.
+namespace {
+bool IsTweakName(const uint8_t* s, uint32_t max) {
+  if (s[0] != 'g') return false;
+  uint32_t i = 1;
+  for (; i < max && s[i]; ++i) {
+    const uint8_t ch = s[i];
+    if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'))
+      return false;
+  }
+  return i > 2 && i < max;
+}
+void FormatVal(char* out, size_t n, uint32_t tag, uint32_t b) {
+  if (tag == 4) std::snprintf(out, n, "%g", F(b));
+  else if (tag == 2) std::snprintf(out, n, "%d", int32_t(b));
+  else std::snprintf(out, n, "0x%08X", b);
+}
+void CatalogWorker() {
+  const DWORD t0 = GetTickCount();
+  auto* ks = rex::runtime::current_kernel_state();
+  uint8_t* vb = (ks && ks->memory()) ? ks->memory()->virtual_membase() : nullptr;
+  const auto path = rex::filesystem::GetExecutableFolder() / "rogue_tweak_catalog.tsv";
+  FILE* f = vb ? std::fopen(path.string().c_str(), "w") : nullptr;
+  if (!f) { g_state.store(3); return; }
+  const uint8_t* img = vb + kImgBase;
+  std::fprintf(f, "name\ttag\tN\theap\tvalue_N32\tN20\tmin_N24\tmax_N28\traw_N32\n");
+  unsigned count = 0;
+  for (uint32_t o = 8; o + 40 <= kImgSize; o += 4) {
+    const uint32_t np = Be(img + o);
+    if (np < kImgBase + 1 || np >= kImgBase + kImgSize - 2) continue;
+    if (img[np - kImgBase] != 'g') continue;
+    const uint32_t tag = Be(img + o + 8);
+    if (tag == 0 || tag > 63) continue;
+    const uint32_t vt = Be(img + o - 8);
+    if (vt < kImgBase || vt >= kImgBase + kImgSize) continue;
+    if (!IsTweakName(img + (np - kImgBase), std::min<uint32_t>(96, kImgBase + kImgSize - np))) continue;
+    const uint32_t heap = Be(img + o + 36);
+    if (heap < 0x40000000u) continue;
+    const uint8_t* h = Host(vb, heap);
+    if (!Readable(h, 40) || Be(h + 4) != np) continue;
+    char v32[32], v20[32], v24[32], v28[32];
+    FormatVal(v32, sizeof(v32), tag, Be(img + o + 32));
+    FormatVal(v20, sizeof(v20), tag, Be(img + o + 20));
+    FormatVal(v24, sizeof(v24), tag, Be(img + o + 24));
+    FormatVal(v28, sizeof(v28), tag, Be(img + o + 28));
+    std::fprintf(f, "%s\t%u\t%08X\t%08X\t%s\t%s\t%s\t%s\t%08X\n",
+                 reinterpret_cast<const char*>(img + (np - kImgBase)), tag, kImgBase + o, heap, v32,
+                 v20, v24, v28, Be(img + o + 32));
+    ++count;
+  }
+  std::fprintf(f, "# %u objects, %lu ms\n", count, (unsigned long)(GetTickCount() - t0));
+  std::fclose(f);
+  g_last_ms.store(unsigned(GetTickCount() - t0));
+  g_state.store(2);
+}
+}  // namespace
+
+void CatalogAsync() {
+  if (!Enabled() || Busy()) return;
+  g_state.store(1);
+  std::thread([] { CatalogWorker(); }).detach();
 }
 }  // namespace rogue::probe

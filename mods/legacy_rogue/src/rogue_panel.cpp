@@ -38,8 +38,29 @@ void DrawDiagnostics() {
   if (ImGui::Button("Snapshot: in match")) probe::RunAsync("in match");
   ImGui::SameLine();
   if (ImGui::Button("Snapshot: after edit")) probe::RunAsync("after edit (GameSpeedLevel=20)");
+  if (ImGui::Button("Dump tweak catalog (TUN-9)")) probe::CatalogAsync();
   ImGui::EndDisabled();
   ImGui::TextDisabled("%s", probe::Status());
+
+  ImGui::SeparatorText("Write test (TUN-5c)");
+  ImGui::TextWrapped("Writes the field the game's code reads (or every game-style table entry). "
+                     "Restore, or restart the game, to undo. Every write is logged to rogue_probe.txt.");
+  for (int i = 0; i < probe::WriteTestCount(); ++i) {
+    ImGui::PushID(1000 + i);
+    ImGui::TextUnformatted(probe::WriteTestName(i));
+    for (int k = 0; k < 3; ++k) {
+      ImGui::PushID(k);
+      if (ImGui::SmallButton(probe::WriteTestPresetLabel(i, k))) probe::WriteTestApply(i, k);
+      ImGui::PopID();
+      ImGui::SameLine();
+    }
+    if (ImGui::SmallButton("Restore")) probe::WriteTestRestore(i);
+    char d[192];
+    probe::WriteTestDescribe(i, d, sizeof(d));
+    ImGui::TextDisabled("%s", d);
+    ImGui::PopID();
+  }
+  if (ImGui::Button("Restore all")) probe::WriteTestRestoreAll();
 }
 }  // namespace
 

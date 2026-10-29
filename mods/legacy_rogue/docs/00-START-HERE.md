@@ -1,6 +1,6 @@
 # 00 - Start here (agent onboarding)
 
-Last reviewed: 2026-10-28 by Brenda (monday.com agent). Treat file/line references as hints;
+Last reviewed: 2026-10-29 by Victoria (monday.com agent). Treat file/line references as hints;
 verify against current source.
 
 ## 1. What this is
@@ -14,7 +14,8 @@ Legacy Rogue lives at `mods/legacy_rogue/` and adds, to Be-A-Pro (BAP) only:
 - **Event perks** with on-screen and audio feedback (crit slapshot knockdowns, etc.).
 - **Notoriety**: a heat meter that makes the league react to a superhuman player.
 - **Legacy**: permanent meta-progression across careers.
-One run == one entire BAP career. Full design: `design.md`.
+One run == one entire BAP career. Full design: `design.md`. Owner direction 2026-10-29: perks
+may and should go far beyond vanilla limits (physics-defying checks, penalty immunity).
 
 Repo: `MegaSloppa/nhl-legacy-recomp`, branch `legacy-rogue` (fork of
 `puckhead73/nhl-legacy-recomp`). Owner's local path: `T:\git repos\nhl-legacy-recomp`.
@@ -23,31 +24,32 @@ Repo: `MegaSloppa/nhl-legacy-recomp`, branch `legacy-rogue` (fork of
 
 | Mechanism | How | Needs reverse engineering? |
 |---|---|---|
-| Engine tunables | 12,098 named live settings (`gXxx`) in the guest tweak registry. Parent project indexes them (`src/tunable_runtime.h`, `ITunableStore`). We layer mul/add/set mods via `TunablePatcher` (`include/rogue/tunable_patch.h`). Catalog: `../../docs/tunables_schema.tsv`. | No |
+| Engine tunables | 12,098 named settings (`gXxx`) in the guest tweak registry. Parent project indexes them (`src/tunable_runtime.h`, `ITunableStore`). **WARNING (TUN-4, 2026-10-29): the store edits the object's TYPE TAG (record+8), not its value.** The real layout (value at record+20 plus a heap copy) is in `re-findings.md`; `TunablePatcher` (`include/rogue/tunable_patch.h`) must move to it (TUN-6). Catalog: `../../docs/tunables_schema.tsv` (types and ranges there are inferred). | No (layout done) |
 | Function hooks | Strong-override a generated function: `REX_EXTERN(__imp__sub_X); extern "C" REX_FUNC(sub_X) { pre; __imp__sub_X(ctx, base); post; }`. Pattern proven in `../../src/diag_hooks.cpp`. Registers: `ctx.r3..r10` (args), guest memory via `base + va + REX_PHYS_HOST_OFFSET(va)`, big-endian. | Yes - addresses |
 | Host-side UI/FX/save | ImGui panel in the existing overlay, ImGui foreground draw list for FX, `PlaySoundW` for sfx, key=value text saves next to the exe. | No |
 
-Key trick: most tunables are global (they buff everyone). Make them per-player by
+Key trick: most tunables are global (they buff everyone, CPU included). Make them per-player by
 (a) using the `gTweakByGameStyle*Level` (human) vs `*LevelCPU` split, or
 (b) `ScopedTunable` inside a hook that only fires while the BAP player's action resolves.
 
 ## 3. Hard rules
 
-1. **Off by default.** Everything is gated on `NHL_ROGUE=1`. Without it the game must behave
-   exactly as the parent project ships. Never change parent default behavior.
+1. **Off by default.** Everything is gated on `NHL_ROGUE=1` (`rogue::Enabled()`). Without it the
+   game must behave exactly as the parent project ships. Never change parent default behavior.
+   Diagnostics additionally need `NHL_ROGUE_PROBE=1` (`rogue::probe::Enabled()`).
 2. **Never write the game's own save or `nhlng.db`** from the mod without an explicit task
    saying so. Rogue state lives in `rogue_career.txt` / `rogue_meta.txt` next to the exe.
 3. **Revert on exit.** All tunable layers are removed at BAP game end (`RevertAll`). Perks
    must never leak into other modes.
 4. **No guessed addresses in code.** An address goes into `include/rogue/addresses.h` only
    after it is CONFIRMED in `re-findings.md` (evidence + confidence). Hooks compile only
-   when their address is defined.
+   when their address is defined. Tweak objects are found by NAME at runtime, not by address.
 5. **Tunable names must exist** in `../../docs/tunables_schema.tsv`. Use
    `tools/perk_candidates.py` to search.
 6. **Separate proven from hypothesis** in every doc you write. Label hypotheses.
 7. **You cannot run the game unless your environment says so.** Many agents on this project
-   (e.g. Brenda) have no local build. In that case: write code + probe hooks, hand the user
-   exact build/run/upload steps, and record results when they come back.
+   (e.g. Brenda, Victoria) have no local build. In that case: write code + probe hooks, hand the
+   user exact build/run/upload steps, and record results when they come back.
 8. **Update `current-status.md` and `handoff-log.md` before you stop.**
 9. **CMake: the mod is compiled INTO the `nhllegacy` target** via `target_sources` in
    `mods/legacy_rogue/CMakeLists.txt` (root calls `add_subdirectory(mods/legacy_rogue)` after
@@ -69,14 +71,16 @@ mods/legacy_rogue/
   AGENTS.md, CLAUDE.md          entry points for agents
   CMakeLists.txt                target_sources(nhllegacy ...) - see rule 9
   include/rogue/
-    tunable_patch.h             TunablePatcher (layered mods) + ScopedTunable
+    tunable_patch.h             TunablePatcher (layered mods) + ScopedTunable (writes type tags until TUN-6)
     perks.h                     PerkDef, Scope, EventKind
     run_state.h                 career run, Hype, Notoriety, shop, Legacy
     reactions.h                 Notoriety tier -> league reaction tunable mods
     fx.h                        feedback effects queue
     addresses.h                 CONFIRMED guest addresses only (all TODO today)
-    rogue_mod.h                 entry points the host app calls
-  src/                          implementations; rogue_hooks.cpp = guest hooks
+    rogue_mod.h                 entry points the host app calls; rogue::Enabled()
+    probe.h                     diagnostics: registry snapshots (TUN-4), value write test (TUN-5)
+  src/                          implementations; rogue_hooks.cpp = guest hooks,
+                                rogue_probe.cpp = diagnostics (NHL_ROGUE_PROBE=1)
   tools/find_bap_code.py        string/tunable anchor -> function cross-ref
   tools/perk_candidates.py      tunable search by theme
   docs/                         this folder
@@ -102,11 +106,12 @@ When you add a .cpp, say explicitly that the owner must use `_game_ffx_build.bat
 | `current-status.md` | Task board (IDs like RE-1, FX-1). Authoritative. | Every session |
 | `handoff-log.md` | Append-only session log | Every session |
 | `design.md` | Game design + open design questions | Design changes (owner approves) |
-| `re-findings.md` | Address ledger with evidence and confidence | Any RE result |
+| `re-findings.md` | Address ledger + tweak object layout, with evidence and confidence | Any RE result |
 | `user-guide.md` | Human instructions: build, enable, play, run probes, upload | Workflow changes |
 
 ## 6. Glossary
 
 BAP = Be-A-Pro. Hype = per-career currency. Notoriety = heat 0-1000, 6 tiers. Legacy =
 cross-career meta currency. Perk scope: HumanOnly / Global / BapScoped. Event perk = needs a
-hook. Probe = temporary logging hook used to identify a function.
+hook. Probe = temporary logging hook used to identify a function. Type tag = record+8 of a
+tweak object (4 float, 2 int, 1 bool, 13 game-style table, 12 indexed slider).

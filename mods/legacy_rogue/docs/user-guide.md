@@ -1,7 +1,7 @@
 # User guide (for Cherlyn)
 
 You do the parts that need your PC and the game. Agents do the code and the analysis.
-Last updated 2026-10-29.
+Last updated 2026-10-29 (morning).
 
 ## 1. Repo setup (done)
 
@@ -59,8 +59,8 @@ Saves: `rogue_career.txt`, `rogue_meta.txt` next to the exe. Your real BAP save 
 touched. Delete them to reset.
 
 **Known limit (2026-10-29):** perks that change engine settings (Cannon, Sniper Scope, Freight
-Train, Jet Skates, Iron Lungs, Captain's Aura, the curses) do not affect gameplay yet, and the
-value they write may not be a real setting value. Avoid them in real play until TUN-4 is done.
+Train, Jet Skates, Iron Lungs, Captain's Aura, the curses) do not affect gameplay yet: they write
+the setting's type tag, not its value. Avoid them in real play until TUN-6 is done.
 
 **Smoke test (BUILD-3)** - PASSED 2026-10-29. Kept for re-testing after big changes:
 1. Career start: enter a name, click Start Legacy Rogue career. Perk Shop opens with a free pick.
@@ -97,6 +97,24 @@ Finds where the engine really keeps a setting's value. Read-only; it never chang
 5. Still in the match: in Engine Tunables set `gTweakByGameStyleGameSpeedLevel` to 20, then click
    **Snapshot: after edit**. Wait for Done, then reset the setting.
 6. Quit and upload `out\build\win-amd64-vk-ffx\rogue_probe.txt`.
+
+### 4b. Write test + tweak catalog (TUN-5c / TUN-9, 2026-10-29)
+
+Writes game memory, but only the listed settings and only when you click. Restart to undo.
+Delete the old `rogue_probe.txt` first.
+1. Launch `run_probe.bat`. At the main menu open the overlay, Legacy Rogue, Diagnostics, and
+   click **Dump tweak catalog (TUN-9)**. Wait for Done (writes `rogue_tweak_catalog.tsv`).
+2. Start a match. In **Write test (TUN-5c)**, one setting at a time, try its buttons and note
+   what changes, then **Restore**:
+   - `gSlapShotPowerScale` x3 / x10 / x30: slap shot speed.
+   - `gHitPowerForPhysicsGlobalModifier`, `gHitPowerForPhysicsRatingModifier`: hit force.
+   - `gBalanceOffpuckFallThreshold`, `gBalanceCarrierFallThreshold`: how easily players fall
+     (just skate into people; no big hit needed).
+   - `gHumanTriggerCheckDist`, `gHipCheckRadiusMax`: how far away a check can start.
+   - `gPenaltyChanceCharging` =0 / x10: charging calls (hard to test; optional).
+3. Quit. From the repo root:
+   `python mods\legacy_rogue\tools\find_tweak_consumers.py --generated generated\default --catalog out\build\win-amd64-vk-ffx\rogue_tweak_catalog.tsv --out tweak_readers.tsv`
+4. Upload `rogue_tweak_catalog.tsv`, `tweak_readers.tsv`, `rogue_probe.txt`, and your notes.
 
 ## 5. Starting a fresh agent session
 

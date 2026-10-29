@@ -119,3 +119,87 @@ The probe's include set mirrors diag_hooks.cpp; if `virtual_membase()` or an inc
 resolve, fix the include, not the approach. The 0..20 ranges in tunables_schema.tsv are inferred.
 00-START-HERE.md file map not yet updated for probe.h / rogue_probe.cpp.
 **Next action:** BUILD-7 then TUN-4 probe run (owner); TUN-4 analysis (agent).
+
+### 2026-10-29 (later) - Victoria - TUN-4 probe decoded; TUN-5 write test
+**Objective:** Read the owner's probe run and find the real value location.
+**Done:**
+- Owner applied and committed the previous package (316c3a1); the probe compiled and ran:
+  3 snapshots (menu, in match, after setting GameSpeedLevel to 20), ~0.6 s each.
+- Decoded the tweak object layout (re-findings.md, TUN-4 entry). record+8 = type tag, value at
+  record+20, min/max/default after it, heap copy via record+36. The only change after the edit
+  was record+8 13 -> 20 in the image object. Values identical at menu and in match.
+- The parent's sanity value (`gDekeRatEffect` 0.2) comes from the registration POOL
+  (category, name, label, default), not from a live object.
+- Added the TUN-5 write test to `src/rogue_probe.cpp` (+ `probe.h`, panel buttons): finds the
+  float object by name, validates the layout on both copies, writes stock x factor to both,
+  restores on demand, logs every write.
+- Owner design direction: perks should be able to go far beyond vanilla (physics-defying checks,
+  flying opponents, penalty immunity). Added RE-10 / RE-11.
+**Files changed:** `src/rogue_probe.cpp`, `include/rogue/probe.h`, `src/rogue_panel.cpp`,
+`docs/re-findings.md`, `docs/current-status.md`, `docs/handoff-log.md`, `docs/user-guide.md`,
+`docs/00-START-HERE.md` (file map, tunable facts).
+**Validation:** probe output analysed (sandbox script). Write test NOT compiled by the agent.
+No new .cpp, so the incremental build is enough.
+**Proven:** layout above for 7 objects (float, int, bool, game-style table, indexed slider).
+**Hypotheses / unresolved:** which copy the game reads; whether min/max are enforced; whether
+values are cached at match load; game-style table index (TUN-7).
+**Next action:** TUN-5 (owner), then TUN-6 (agent).
+
+### 2026-10-29 (evening) - Victoria - TUN-5 result: value writes have no visible effect
+**Objective:** Evaluate the TUN-5 write test.
+**Done:**
+- First build of the TUN-5 package did nothing: the zip carried UTC timestamps, which unzip
+  2 h old in Helsinki, so Ninja skipped the files. Re-issued with local timestamps. Agents: stamp
+  zip entries with the owner's local time (Europe/Helsinki).
+- Owner ran TUN-5 (log: 13 writes, all three objects found and validated, restores logged):
+  live edits in a BAP match and x10 set at the menu before an exhibition. No visible effect on
+  slap shots (x0.2 and x10) or hits.
+- Wrote `tools/find_tweak_consumers.py` (TUN-8): static scan of generated code for references
+  to each object span and the game-style tables, with two rendering tunables as positive
+  controls. Self-tested on a synthetic sample only.
+**Files changed:** `tools/find_tweak_consumers.py` (new), `docs/current-status.md`,
+`docs/handoff-log.md`, `docs/re-findings.md`.
+**Validation:** owner report + `rogue_probe.txt` write log.
+**Proven:** writes to N+20 and the heap copy land and stay; no visible gameplay change.
+**Hypotheses / unresolved:** see current-status "Recommended next action" A/B/C. The tool assumes
+loads look like `ctx.rN.u32 + disp`; unverified against real generated code.
+**Next action:** TUN-8 (owner runs the scan), then RE-0 / RE-1.
+
+### 2026-10-29 (evening, later) - Victoria - TUN-8 scan: value field is N+32; TUN-5b
+**Objective:** Read the consumer scan.
+**Done:**
+- `tweak_consumers.txt` (183 generated files). Object stride is 48 bytes (N-8 .. N+40), so
+  "+40" hits are the NEXT object. Static-init code (files 165-180) constructs objects (-8).
+  Real readers load base+40 = N+32: gHitTune_GlobalScale (sub_83588BF8, hit code area),
+  gSlapShotPowerScale (sub_833E87E0), gBeAPro_LineEnergyBoost (sub_833CBC08), gLODShader
+  (sub_8361FA70). gEnableLynxBinaryFileLoad reads byte N+21 and N+24/N+28/N+32.
+  Game-style: sub_829F8A20 (file 49) loads *(N+36) = heap copy H, then *(H+32) = heap table.
+  gSlapShotPowerMultiplier and gMomentumPhysicsImpulse: no static reader found.
+- So TUN-5 wrote N+20 (equal to N+32 at stock), the wrong field. Built TUN-5b.
+**Files changed:** `src/rogue_probe.cpp`, `include/rogue/probe.h`, `src/rogue_panel.cpp`, docs.
+**Validation:** none yet (not compiled by the agent).
+**Hypotheses / unresolved:** N+20 = reset/default, N+32 = current. Whether sub_829F8A20 runs per
+frame or at match start. Readers of SlapShotPowerMultiplier / MomentumPhysicsImpulse may use a
+lookup by name (not visible statically).
+**Next action:** TUN-5b (owner).
+
+### 2026-10-29 (morning) - Victoria - TUN-5b: N+32 confirmed as the live value; TUN-5c + TUN-9
+**Objective:** Evaluate TUN-5b, prepare the full catalog and hit/penalty tests.
+**Done:**
+- Owner TUN-5b report + log: gLODShader 0 / 2 changed rendering immediately (0 = flickering dark
+  splotches on players, 2 = constant slight stutter). gSlapShotPowerScale x0.2 = limp, x10 = very
+  fast (but not superhuman). Game-style tables 0 / 20: no effect. gHitTune_GlobalScale x10: no
+  visible effect, but big hits are hard to land.
+- TUN-5c targets (scalar, float or int auto-detected from the tag): SlapShotPowerScale x30,
+  hit-power modifiers, fall thresholds, check reach, gPenaltyChanceCharging.
+- TUN-9: panel "Dump tweak catalog" scans the image for every tweak object (signature:
+  name "g...", tag, class pointer, heap copy with the same name) and writes
+  rogue_tweak_catalog.tsv. `find_tweak_consumers.py --catalog` counts static readers of N+32.
+**Files changed:** `src/rogue_probe.cpp`, `include/rogue/probe.h`, `src/rogue_panel.cpp`,
+`tools/find_tweak_consumers.py`, docs.
+**Validation:** tool self-tested on a synthetic sample; C++ not compiled by the agent.
+**Proven:** N+32 is read live by game code (2 objects, repeated toggles, one session). Game code
+does not clamp to the object's min/max.
+**Hypotheses / unresolved:** N+20 = reset/default. Readers that go through the heap copy are not
+counted by the static tool. Game-style presets are applied somewhere else.
+**Next action:** TUN-5c + TUN-9 (owner), then TUN-6 (agent).
