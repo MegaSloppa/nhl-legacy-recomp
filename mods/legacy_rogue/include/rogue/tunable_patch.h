@@ -1,10 +1,11 @@
-// Legacy Rogue - name-keyed, layered tunable patching on top of the existing
-// nhl::ui::ITunableStore (src/tunable_runtime.h). No changes to the store needed.
+// Legacy Rogue - name-keyed, layered tunable patching on the LIVE value (TUN-6).
 //
-// Perks never write raw values. Each active perk contributes a Mod (mul/add/set)
-// to a tunable; the composer recomputes  value = set ?: (stock * PROD(mul) + SUM(add))
-// and writes it once. Removing a perk recomputes from stock, so stacking and
-// end-of-run revert are always exact.
+// Perks never write raw values. Each active perk contributes a Mod (mul/add/set) to a
+// tunable; the composer recomputes  value = set ?: (stock * PROD(mul) + SUM(add))  and writes
+// it to the live value (N+32 + heap copy, via TweakIndex). Removing a perk recomputes from
+// stock, so stacking and end-of-run revert are exact. Only float (tag 4) and int (tag 2)
+// tunables are supported; anything else is skipped.
+// (Before 2026-10-29 this went through the parent ITunableStore, which edits the TYPE TAG.)
 //
 // Two scopes:
 //   * Persistent: active for the whole Be-A-Pro game (Apply/Revert at game start/end).
@@ -12,6 +13,8 @@
 //                 player's check is being resolved) - this is how we make GLOBAL
 //                 tunables behave PER-PLAYER. Valid only if the hook and the
 //                 consumer run on the same guest thread (verify per hook).
+// NOTE: game code does not clamp to a tunable's own min/max (TUN-5b), so stacking can go far
+// beyond vanilla. Keep perk numbers sane on purpose.
 #pragma once
 #include <cmath>
 #include <cstdint>
@@ -19,33 +22,37 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include "renderer/core/nhl_tunable_store.h"
+#include "rogue/tweak_index.h"
 
 namespace rogue {
 
 enum class ModOp : uint8_t { kMul, kAdd, kSet };
 
 struct Mod {
-  const char* tunable;  // gXxx name (join key, see docs/tunables_schema.tsv)
+  const char* tunable;  // gXxx name (see the TUN-9 catalog / tweak_readers)
   ModOp op;
-  float value;          // ints/bools are carried as float and rounded on write
+  float value;          // ints are carried as float and rounded on write
 };
+
+inline bool ScalarTag(uint32_t tag) { return tag == 4u || tag == 2u; }
+inline float BitsToF(uint32_t b, uint32_t tag) {
+  if (tag == 4u) { float f; std::memcpy(&f, &b, 4); return f; }
+  return float(int32_t(b));
+}
+inline uint32_t FToBits(float v, uint32_t tag) {
+  if (tag == 4u) { uint32_t b; std::memcpy(&b, &v, 4); return b; }
+  return uint32_t(int32_t(std::lround(v)));
+}
 
 class TunablePatcher {
  public:
-  explicit TunablePatcher(nhl::ui::ITunableStore* store) : store_(store) {}
-
-  // Call once the store reports kReady (build is lazy, ~12 s after boot).
-  bool Index() {
-    if (!store_ || store_->GetState() != nhl::ui::ITunableStore::State::kReady)
-      return false;
-    by_name_.clear();
-    for (std::size_t i = 0; i < store_->Count(); ++i)
-      by_name_[store_->Info(i).name] = i;
-    return true;
+  // Kicks the index build; true once it is ready.
+  bool Index() { auto& t = TweakIndex::Get(); t.RequestBuild(); return t.Ready(); }
+  bool Ready() const { return TweakIndex::Get().Ready(); }
+  bool Has(const char* name) const {
+    const TweakRef* r = TweakIndex::Get().Find(name);
+    return r && ScalarTag(r->tag);
   }
-  bool Ready() const { return !by_name_.empty(); }
-  bool Has(const char* name) const { return by_name_.count(name) != 0; }
 
   // layer = perk instance id. Re-adding a layer replaces it.
   void AddLayer(uint32_t layer, const std::vector<Mod>& mods) {
@@ -65,29 +72,11 @@ class TunablePatcher {
     for (auto& [id, mods] : copy) for (auto& m : mods) Recompute(m.tunable);
   }
 
-  bool Lookup(const char* name, std::size_t& idx) const {
-    auto it = by_name_.find(name);
-    if (it == by_name_.end()) return false;
-    idx = it->second;
-    return true;
-  }
-  nhl::ui::ITunableStore* store() const { return store_; }
-
-  static float BitsToF(uint32_t b, nhl::ui::TunableType t) {
-    if (t == nhl::ui::TunableType::kFloat) { float f; std::memcpy(&f, &b, 4); return f; }
-    return float(int32_t(b));
-  }
-  static uint32_t FToBits(float v, nhl::ui::TunableType t) {
-    if (t == nhl::ui::TunableType::kFloat) { uint32_t b; std::memcpy(&b, &v, 4); return b; }
-    if (t == nhl::ui::TunableType::kBool) return v != 0.f ? 1u : 0u;
-    return uint32_t(int32_t(std::lround(v)));
-  }
-
  private:
   void Recompute(const char* name) {
-    std::size_t i;
-    if (!Lookup(name, i)) return;  // unknown on this binary: skip (log in caller)
-    auto e = store_->Info(i);
+    TweakIndex& t = TweakIndex::Get();
+    const TweakRef* r = t.Find(name);
+    if (!r || !ScalarTag(r->tag)) return;  // unknown or unsupported type: skip
     bool any = false, has_set = false;
     float mul = 1.f, add = 0.f, set = 0.f;
     for (auto& [id, mods] : layers_)
@@ -98,33 +87,31 @@ class TunablePatcher {
         else if (m.op == ModOp::kAdd) add += m.value;
         else { has_set = true; set = m.value; }
       }
-    if (!any) { store_->Reset(i); return; }
-    float stock = BitsToF(e.captured_bits, e.type);
-    store_->Set(i, FToBits(has_set ? set : stock * mul + add, e.type));
+    if (!any) { t.Write(*r, r->stock); return; }
+    const float stock = BitsToF(r->stock, r->tag);
+    t.Write(*r, FToBits(has_set ? set : stock * mul + add, r->tag));
   }
 
-  nhl::ui::ITunableStore* store_;
-  std::unordered_map<std::string, std::size_t> by_name_;
   std::unordered_map<uint32_t, std::vector<Mod>> layers_;
 };
 
-// RAII override of one tunable for the duration of a guest call.
+// RAII override of one tunable (scale of its CURRENT value) for the duration of a guest call.
 class ScopedTunable {
  public:
-  ScopedTunable(TunablePatcher& p, const char* name, float scale) : p_(p) {
-    if (!p_.Lookup(name, idx_)) return;
-    auto* s = p_.store();
-    auto e = s->Info(idx_);
-    saved_ = s->Get(idx_);
-    s->Set(idx_, TunablePatcher::FToBits(TunablePatcher::BitsToF(saved_, e.type) * scale, e.type));
-    active_ = true;
+  ScopedTunable(TunablePatcher&, const char* name, float scale) {
+    TweakIndex& t = TweakIndex::Get();
+    r_ = t.Find(name);
+    if (!r_ || !ScalarTag(r_->tag)) { r_ = nullptr; return; }
+    saved_ = t.Read(*r_);
+    t.Write(*r_, FToBits(BitsToF(saved_, r_->tag) * scale, r_->tag));
   }
-  ~ScopedTunable() { if (active_) p_.store()->Set(idx_, saved_); }
+  ~ScopedTunable() { if (r_) TweakIndex::Get().Write(*r_, saved_); }
+  ScopedTunable(const ScopedTunable&) = delete;
+  ScopedTunable& operator=(const ScopedTunable&) = delete;
+
  private:
-  TunablePatcher& p_;
-  std::size_t idx_ = 0;
+  const TweakRef* r_ = nullptr;
   uint32_t saved_ = 0;
-  bool active_ = false;
 };
 
 }  // namespace rogue

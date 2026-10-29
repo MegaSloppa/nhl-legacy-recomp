@@ -17,6 +17,10 @@ bool WriteTestApply(int i, int p);
 void WriteTestRestore(int i);
 void WriteTestRestoreAll();
 void WriteTestDescribe(int i, char* buf, unsigned n);
-// TUN-9: write rogue_tweak_catalog.tsv (every tweak object, live value at N+32). Async.
+// TUN-9: write rogue_tweak_catalog.txt (tab-separated) (every tweak object, live value at N+32). Async.
 void CatalogAsync();
+// TUN-10: one-click hip-check guess (several tunables at once); undo with WriteTestRestoreAll.
+void WriteTestHipCombo();
+// RE-1 probes: write a MARK line to rogue_probe.txt (to line up the log with what you did).
+void Mark();
 }  // namespace rogue::probe

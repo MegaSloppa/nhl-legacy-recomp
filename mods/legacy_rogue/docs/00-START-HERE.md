@@ -1,6 +1,6 @@
 # 00 - Start here (agent onboarding)
 
-Last reviewed: 2026-10-29 by Victoria (monday.com agent). Treat file/line references as hints;
+Last reviewed: 2026-10-29 (checkpoint) by Victoria (monday.com agent). Treat file/line references as hints;
 verify against current source.
 
 ## 1. What this is
@@ -24,7 +24,7 @@ Repo: `MegaSloppa/nhl-legacy-recomp`, branch `legacy-rogue` (fork of
 
 | Mechanism | How | Needs reverse engineering? |
 |---|---|---|
-| Engine tunables | 12,098 named settings (`gXxx`) in the guest tweak registry. Parent project indexes them (`src/tunable_runtime.h`, `ITunableStore`). **WARNING (TUN-4, 2026-10-29): the store edits the object's TYPE TAG (record+8), not its value.** The real layout (value at record+20 plus a heap copy) is in `re-findings.md`; `TunablePatcher` (`include/rogue/tunable_patch.h`) must move to it (TUN-6). Catalog: `../../docs/tunables_schema.tsv` (types and ranges there are inferred). | No (layout done) |
+| Engine tunables | ~10,583 tweak objects (`gXxx`). The parent `ITunableStore` edits the TYPE TAG (N+8) and must not be used for writes. The mod uses `TweakIndex` (`include/rogue/tweak_index.h`): live value N+32 + heap copy H+36 (CONFIRMED). Which tunables are read by code: TUN-9 catalog + `tools/find_tweak_consumers.py --catalog`. | No |
 | Function hooks | Strong-override a generated function: `REX_EXTERN(__imp__sub_X); extern "C" REX_FUNC(sub_X) { pre; __imp__sub_X(ctx, base); post; }`. Pattern proven in `../../src/diag_hooks.cpp`. Registers: `ctx.r3..r10` (args), guest memory via `base + va + REX_PHYS_HOST_OFFSET(va)`, big-endian. | Yes - addresses |
 | Host-side UI/FX/save | ImGui panel in the existing overlay, ImGui foreground draw list for FX, `PlaySoundW` for sfx, key=value text saves next to the exe. | No |
 
@@ -63,6 +63,12 @@ Key trick: most tunables are global (they buff everyone, CPU included). Make the
 12. **Deliver only files under `mods/legacy_rogue/`** unless a task says otherwise. Parent-file
     wiring is edited by the owner. If GitHub writes fail, ship a zip of CHANGED files only,
     laid out from the repo root (`mods/legacy_rogue/...`), so it unzips straight over the repo.
+    Stamp zip entries with the owner's LOCAL time (Europe/Helsinki): UTC stamps unzip ~2 h old
+    and Ninja then skips the files (happened 2026-10-29). Do not write a commit message with
+    every delivery; only when the owner says they will commit or at a real checkpoint.
+13. **Hooks:** strong overrides catch direct AND indirect calls (the function table registers
+    `sub_X`, verified 2026-10-29). A hook that never fires means the code is idle, not that the
+    hook failed. Probe hooks live in `src/rogue_probe.cpp` and only log with `NHL_ROGUE_PROBE=1`.
 
 ## 4. File map
 
@@ -71,14 +77,15 @@ mods/legacy_rogue/
   AGENTS.md, CLAUDE.md          entry points for agents
   CMakeLists.txt                target_sources(nhllegacy ...) - see rule 9
   include/rogue/
-    tunable_patch.h             TunablePatcher (layered mods) + ScopedTunable (writes type tags until TUN-6)
+    tunable_patch.h             TunablePatcher (layered mods) + ScopedTunable, on TweakIndex
     perks.h                     PerkDef, Scope, EventKind
     run_state.h                 career run, Hype, Notoriety, shop, Legacy
     reactions.h                 Notoriety tier -> league reaction tunable mods
     fx.h                        feedback effects queue
     addresses.h                 CONFIRMED guest addresses only (all TODO today)
     rogue_mod.h                 entry points the host app calls; rogue::Enabled()
-    probe.h                     diagnostics: registry snapshots (TUN-4), value write test (TUN-5)
+    probe.h                     diagnostics: snapshots, catalog (TUN-9), write tests, RE-1 hooks
+    tweak_index.h               live tweak object index by name (N+32 + heap copy); perk write path
   src/                          implementations; rogue_hooks.cpp = guest hooks,
                                 rogue_probe.cpp = diagnostics (NHL_ROGUE_PROBE=1)
   tools/find_bap_code.py        string/tunable anchor -> function cross-ref

@@ -10,6 +10,10 @@
 #include "rogue/probe.h"
 #include "rogue/rogue_mod.h"
 #include "rogue/run_state.h"
+#include "rogue/tweak_index.h"
+#include "rogue/reactions.h"
+#include "rogue/tunable_patch.h"
+#include <cstring>
 
 namespace rogue {
 namespace {
@@ -27,6 +31,34 @@ const char* RarityName(Rarity r) {
 void RefreshFreeFlags() {
   for (auto& o : g_offer) o.free = Run().PendingFreePick() && !o.perk->is_curse;
 }
+// Live readout of every tunable the owned perks + Notoriety reaction touch: stock -> live value
+// in game memory. During a BAP game the live values should differ; after "BAP game ended" they
+// should be back to stock. Verifies the whole perk write path without judging gameplay feel.
+void DrawPerkEffects() {
+  if (!TweakIndex::Get().Ready()) return;
+  std::vector<const char*> names;
+  auto add = [&](const std::vector<Mod>& mods) {
+    for (auto& m : mods) {
+      bool dup = false;
+      for (auto* n : names) dup = dup || !std::strcmp(n, m.tunable);
+      if (!dup) names.push_back(m.tunable);
+    }
+  };
+  for (auto& o : Run().run().perks)
+    if (auto* p = FindPerk(o.id.c_str())) add(p->mods);
+  add(ReactionMods(Run().Tier()));
+  if (names.empty()) return;
+  if (!ImGui::TreeNode("Active perk effects (stock -> live)")) return;
+  for (auto* n : names) {
+    const TweakRef* r = TweakIndex::Get().Find(n);
+    if (!r || !ScalarTag(r->tag)) { ImGui::TextDisabled("%s: not found / unsupported", n); continue; }
+    const float s = BitsToF(r->stock, r->tag), v = BitsToF(TweakIndex::Get().Read(*r), r->tag);
+    if (s != v) ImGui::Text("%s  %.3f -> %.3f", n, s, v);
+    else ImGui::TextDisabled("%s  %.3f (stock)", n, s);
+  }
+  ImGui::TreePop();
+}
+
 void DrawDiagnostics() {
   if (!probe::Enabled()) return;
   ImGui::SeparatorText("Diagnostics (NHL_ROGUE_PROBE=1)");
@@ -39,10 +71,12 @@ void DrawDiagnostics() {
   ImGui::SameLine();
   if (ImGui::Button("Snapshot: after edit")) probe::RunAsync("after edit (GameSpeedLevel=20)");
   if (ImGui::Button("Dump tweak catalog (TUN-9)")) probe::CatalogAsync();
+  ImGui::SameLine();
+  if (ImGui::Button("Mark log")) probe::Mark();
   ImGui::EndDisabled();
   ImGui::TextDisabled("%s", probe::Status());
 
-  ImGui::SeparatorText("Write test (TUN-5c)");
+  ImGui::SeparatorText("Write test (TUN-10 hip checks)");
   ImGui::TextWrapped("Writes the field the game's code reads (or every game-style table entry). "
                      "Restore, or restart the game, to undo. Every write is logged to rogue_probe.txt.");
   for (int i = 0; i < probe::WriteTestCount(); ++i) {
@@ -60,6 +94,8 @@ void DrawDiagnostics() {
     ImGui::TextDisabled("%s", d);
     ImGui::PopID();
   }
+  if (ImGui::Button("Hip check combo (guess)")) probe::WriteTestHipCombo();
+  ImGui::SameLine();
   if (ImGui::Button("Restore all")) probe::WriteTestRestoreAll();
 }
 }  // namespace
@@ -91,7 +127,12 @@ void DrawPanel() {
   ImGui::ProgressBar(r.notoriety / 1000.f, ImVec2(-1, 0));
   ImGui::Text("This game: %d knockdowns, %d crit slaps   Career score: %d", r.live.knockdowns,
               r.live.crit_slaps, Run().LegacyScore());
+  DrawPerkEffects();
   ImGui::SeparatorText("Perks");
+  if (TweakIndex::Get().Ready())
+    ImGui::TextDisabled("Tunable index ready: %u settings", unsigned(TweakIndex::Get().Count()));
+  else
+    ImGui::TextDisabled("Tunable index not built yet (builds ~20 s after boot)");
   for (auto& o : r.perks)
     if (auto* p = FindPerk(o.id.c_str()))
       ImGui::BulletText("%s x%d  %s%s", p->name, o.stacks, p->blurb, p->is_curse ? "  [CURSE]" : "");

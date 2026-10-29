@@ -1,4 +1,5 @@
 #include "rogue/rogue_mod.h"
+#include <chrono>
 #include <cstdlib>
 #include "rogue/fx.h"
 #include "rogue/perks.h"
@@ -8,17 +9,20 @@
 
 namespace rogue {
 namespace {
-nhl::ui::ITunableStore* g_store = nullptr;
 TunablePatcher* g_patcher = nullptr;
 bool g_in_game = false;
+bool g_pending_apply = false;  // BAP game started before the tweak index was ready
 const bool g_enabled = [] { const char* e = std::getenv("NHL_ROGUE"); return e && *e == '1'; }();
 constexpr uint32_t kReactionLayer = 0xFFFF0000u;
+std::chrono::steady_clock::time_point g_t0;
 
 uint32_t LayerId(size_t perk_idx, int stack) { return uint32_t(perk_idx * 16 + stack); }
 
 // Persistent layers: owned perks (non-scoped) + the league's heat reaction.
 void ApplyLayers() {
-  if (!g_patcher || !g_patcher->Ready()) return;
+  if (!g_patcher) return;
+  if (!g_patcher->Ready()) { g_pending_apply = true; g_patcher->Index(); return; }
+  g_pending_apply = false;
   g_patcher->RevertAll();
   auto& run = Run().run();
   for (size_t i = 0; i < run.perks.size(); ++i) {
@@ -34,19 +38,24 @@ bool Enabled() { return g_enabled; }
 TunablePatcher* Patcher() { return g_patcher; }
 bool InBapGame() { return g_enabled && g_in_game && Run().run().active; }
 
-void Init(nhl::ui::ITunableStore* store) {
+// The parent store is no longer used for perks (it edits type tags, see tweak_index.h); the
+// parameter stays so the parent wiring in nhllegacy_app.h does not change.
+void Init(nhl::ui::ITunableStore* /*store*/) {
   if (!g_enabled) return;
-  g_store = store;
-  g_patcher = new TunablePatcher(store);
+  g_patcher = new TunablePatcher();
+  g_t0 = std::chrono::steady_clock::now();
   Run().Load();
 }
 
 void Tick() {
-  if (!g_enabled || !g_store) return;
+  if (!g_enabled || !g_patcher) return;
   if (!g_patcher->Ready()) {
-    g_store->RequestBuild();  // idempotent; scan runs on a worker
-    if (g_patcher->Index() && g_in_game) ApplyLayers();
+    // Build only after tweak registration (~12 s after boot) or when a game needs it.
+    if (g_pending_apply || std::chrono::steady_clock::now() - g_t0 > std::chrono::seconds(20))
+      g_patcher->Index();
+    return;
   }
+  if (g_pending_apply && g_in_game) ApplyLayers();
 }
 
 void OnBapGameStart() {
@@ -59,6 +68,7 @@ void OnBapGameStart() {
 void OnBapGameEnd(const GameStats& final_stats) {
   if (!g_enabled) return;
   g_in_game = false;
+  g_pending_apply = false;
   if (g_patcher) g_patcher->RevertAll();  // never leak perks into other modes
   GameStats g = final_stats;
   g.knockdowns = Run().run().live.knockdowns;  // hook-counted

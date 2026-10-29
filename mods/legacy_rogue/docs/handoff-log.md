@@ -203,3 +203,71 @@ does not clamp to the object's min/max.
 **Hypotheses / unresolved:** N+20 = reset/default. Readers that go through the heap copy are not
 counted by the static tool. Game-style presets are applied somewhere else.
 **Next action:** TUN-5c + TUN-9 (owner), then TUN-6 (agent).
+
+### 2026-10-29 (late morning) - Victoria - Catalog analysed; TUN-6 done; RE-1 probe hooks; TUN-10
+**Objective:** Use the TUN-9 catalog to fix the perk write path and find the hip-check code.
+**Done:**
+- TUN-5c owner notes: slap x3..x30 differ less than expected (probable puck speed cap), fall
+  thresholds / check distances inconclusive, gPenaltyChanceCharging stock 0,
+  gHitPowerForPhysicsRatingModifier is tag 12 (the write test only takes tags 2/4).
+- Catalog: 10,583 objects; readers: 7,779 with a static reader of N+32.
+- TUN-6: new `include/rogue/tweak_index.h` + `src/tweak_index.cpp` (image scan by name, same
+  signature as the catalog; writes N+32 and H+36). `tunable_patch.h` rewritten on top of it;
+  `rogue_mod.cpp` builds the index 20 s after boot or at BAP game start. Parent store unused.
+- perk_catalog.cpp / reactions.cpp rebuilt on tunables with readers (stock values in comments).
+  New Common perk Quick Release (gWristShotPowerMultiplier). Existing saves keep their unlock
+  list, so Quick Release only appears for a fresh meta file.
+- RE-1 probe hooks (pass-through, NHL_ROGUE_PROBE=1 logs) on six candidate functions; hip-check
+  write test (8 tunables + hit power) and a "Hip check combo (guess)" button; Mark log button.
+- Catalog / readers files are now .txt (tab-separated) so they can be uploaded.
+**Files changed:** `include/rogue/tweak_index.h` (new), `src/tweak_index.cpp` (new),
+`include/rogue/tunable_patch.h`, `src/rogue_mod.cpp`, `src/perk_catalog.cpp`, `src/reactions.cpp`,
+`src/rogue_probe.cpp`, `include/rogue/probe.h`, `src/rogue_panel.cpp`, `CMakeLists.txt`,
+`tools/find_tweak_consumers.py`, docs.
+**Validation:** not compiled by the agent. New .cpp -> `_game_ffx_build.bat`.
+**Proven:** catalog and reader counts above.
+**Hypotheses / unresolved:** which hook fires per hip check; direction of each hip-check tunable;
+all new perk tunables except gSlapShotPowerScale are unverified in play.
+**Next action:** TUN-10 + RE-1 run (owner).
+
+### 2026-10-29 (midday) - Victoria - RE-1 round 1 result; round 2 = player-event handlers
+**Objective:** Read the first hook log.
+**Done:**
+- 30 min exhibition, 6 marks, one landed hip check. sub_83411E90, sub_83411C48, sub_83429698 and
+  sub_83589230 never fired at all. sub_8342C628 ran ~385 calls/s from lr 0x8342D13C with ~14
+  distinct r3 values (0xA9xxxxxx): a per-skater update, so r3 is a skater object. sub_83588BF8 ran
+  in bursts (median 1/s, up to 77/s) from lr 0x835A44E4 / 0x8343832C with r3/r4 = two skater
+  objects; no calls near the owner's marked hits.
+- Conclusion (hypothesis): the Physics/Ragdoll/HipCheck tunable family belongs to a code path the
+  normal user hip check does not use (or one that is dormant).
+- Round 2 hooks: 15 player-event handlers (gEvtValPE_* each has one reader in file 44, spaced
+  0x260 apart) + PE_NONE control + the two round-1 functions. Log also carries r7.
+**Files changed:** `src/rogue_probe.cpp`, docs.
+**Validation:** not compiled by the agent; no new files.
+**Next action:** owner event script; then RE-2 / RE-5 / RE-6 wiring.
+
+### 2026-10-29 (afternoon) - Victoria - Event handlers idle; hook method verified; RE-1 sweep
+**Objective:** Find code that runs on a landed check.
+**Done:**
+- Exhibition (20 marks) and BAP game (13 marks): none of the 15 PE_* handlers or the PE_NONE
+  control fired. Only sub_8342C628 / sub_83588BF8 fired, as before.
+- Owner's findstr (hook_refs.txt): `nhllegacy_init.cpp` / `nhllegacy_register.cpp` register
+  `sub_X` in the function table, so indirect calls reach a strong override; sub_83411E90 has 3
+  direct callers in file 134 and still never ran. Conclusion: hooks work; those functions are idle.
+- Round 3: hooks on 141 functions that read a hit / check / balance / fall / collision tunable
+  (filtered TUN-9 readers; list in re-findings.md). Per-second counts + sparse call lines.
+- Active perk effects readout in the panel (stock -> live for every perk / reaction tunable).
+**Files changed:** `src/rogue_probe.cpp`, `src/rogue_panel.cpp`, docs.
+**Validation:** not compiled by the agent; no new files.
+**Next action:** owner sweep run, then RE-1 analysis.
+
+### 2026-10-29 12:00 - Victoria - Session checkpoint (owner break)
+**Objective:** Leave the branch ready for a commit, push and a fresh session.
+**Done:** Verified GitHub HEAD = 3ce8b2a. Added the checkpoint section to current-status.md
+(what is committed, what is applied but untested, first steps next session) and PARENT-1.
+00-START-HERE: delivery conventions (local-time zip timestamps, commit messages only on request).
+**Files changed:** `docs/current-status.md`, `docs/handoff-log.md`, `docs/00-START-HERE.md`.
+**Validation:** doc review only.
+**Proven / hypotheses:** unchanged from the previous entry.
+**Next action:** owner commits; next session runs user-guide 4b (perk readout + hit sweep), then
+RE-1 analysis of the sweep log.

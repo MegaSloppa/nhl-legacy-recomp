@@ -29,6 +29,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <mutex>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -216,14 +218,14 @@ const char* Status() {
   static char buf[128];
   switch (g_state.load()) {
     case 1: return "Scanning guest memory (can take up to a minute, game may stutter)...";
-    case 2: std::snprintf(buf, sizeof(buf), "Done in %u ms (rogue_probe.txt / rogue_tweak_catalog.tsv)", g_last_ms.load()); return buf;
+    case 2: std::snprintf(buf, sizeof(buf), "Done in %u ms (rogue_probe.txt / rogue_tweak_catalog.txt)", g_last_ms.load()); return buf;
     case 3: return "Failed: guest memory not available or rogue_probe.txt could not be opened";
     default: return "Idle";
   }
 }
 
 // ---------------------------------------------------------------- write test (TUN-5b/5c)
-// TUN-5b RESULT (owner, 2026-10-29): N+32 IS the live value. gSlapShotPowerScale x0.2 made slap
+// TUN-5c targets replaced 2026-10-29 by hip-check tunables (TUN-10). TUN-5b RESULT (owner, 2026-10-29): N+32 IS the live value. gSlapShotPowerScale x0.2 made slap
 // shots limp, x10 (above its own max 2.0) made them very fast; gLODShader 0/2 changed rendering
 // immediately. Game-style tables (all entries 0/20) had no visible effect. TUN-5c targets below:
 // hit force, fall thresholds, check reach, one penalty chance, and higher slap-shot scales.
@@ -252,14 +254,24 @@ struct WriteTest {
   bool is_float = true;
 };
 WriteTest g_wt[] = {
-  {"gSlapShotPowerScale", Kind::kScalar, {{"x3", true, 3.f}, {"x10", true, 10.f}, {"x30", true, 30.f}}},
-  {"gHitPowerForPhysicsGlobalModifier", Kind::kScalar, {{"x0.2", true, 0.2f}, {"x3", true, 3.f}, {"x10", true, 10.f}}},
-  {"gHitPowerForPhysicsRatingModifier", Kind::kScalar, {{"x0.2", true, 0.2f}, {"x3", true, 3.f}, {"x10", true, 10.f}}},
-  {"gBalanceOffpuckFallThreshold", Kind::kScalar, {{"x0.2", true, 0.2f}, {"x3", true, 3.f}, {"x10", true, 10.f}}},
-  {"gBalanceCarrierFallThreshold", Kind::kScalar, {{"x0.2", true, 0.2f}, {"x3", true, 3.f}, {"x10", true, 10.f}}},
-  {"gHumanTriggerCheckDist", Kind::kScalar, {{"x0.5", true, 0.5f}, {"x3", true, 3.f}, {"x10", true, 10.f}}},
-  {"gHipCheckRadiusMax", Kind::kScalar, {{"x0.5", true, 0.5f}, {"x3", true, 3.f}, {"x10", true, 10.f}}},
-  {"gPenaltyChanceCharging", Kind::kScalar, {{"=0", false, 0.f}, {"x3", true, 3.f}, {"x10", true, 10.f}}},
+  // Hip check selection (read by sub_83411E90 / sub_83411C48). Directions are GUESSES.
+  {"gHipCheckRadiusMax", Kind::kScalar, {{"x3", true, 3.f}, {"x6", true, 6.f}, {"x10", true, 10.f}}},        // 0.3
+  {"gHipCheckRadiusMaxest", Kind::kScalar, {{"x2", true, 2.f}, {"x5", true, 5.f}, {"x10", true, 10.f}}},     // 1.0
+  {"gHipCheckSpeedMin", Kind::kScalar, {{"x0", true, 0.f}, {"x0.5", true, 0.5f}, {"x2", true, 2.f}}},       // 0.25
+  {"gHipCheckAngleMin", Kind::kScalar, {{"x0", true, 0.f}, {"x0.5", true, 0.5f}, {"x2", true, 2.f}}},       // 0.5
+  {"gHipCheckAngleMax", Kind::kScalar, {{"x0.5", true, 0.5f}, {"x2", true, 2.f}, {"x3", true, 3.f}}},       // 0.6
+  {"gHipCheckBalanceRatioTotalThreshold", Kind::kScalar, {{"x0.2", true, 0.2f}, {"x0.5", true, 0.5f}, {"x2", true, 2.f}}},  // 1.25
+  // Hip check knockdown / contact (read by sub_83429698 / sub_8342C628)
+  {"gHipCheckBalanceThreshold", Kind::kScalar, {{"x0.2", true, 0.2f}, {"x1.5", true, 1.5f}, {"x2", true, 2.f}}},  // 0.5
+  {"gHipCheckContactCOMRatio", Kind::kScalar, {{"x0.2", true, 0.2f}, {"x1.3", true, 1.3f}, {"x2", true, 2.f}}},   // 0.75
+  // Hit force (read by sub_83589230)
+  {"gHitPowerForPhysicsGlobalModifier", Kind::kScalar, {{"x3", true, 3.f}, {"x10", true, 10.f}, {"x20", true, 20.f}}},  // 0.5
+};
+// One-click guess at "every check can become a hip check, and hits hard".
+struct ComboStep { const char* name; float factor; };
+const ComboStep kHipCombo[] = {
+  {"gHipCheckRadiusMax", 6.f}, {"gHipCheckRadiusMaxest", 2.f}, {"gHipCheckSpeedMin", 0.f},
+  {"gHipCheckAngleMin", 0.f}, {"gHipCheckAngleMax", 3.f}, {"gHitPowerForPhysicsGlobalModifier", 10.f},
 };
 constexpr int kNumWt = int(sizeof(g_wt) / sizeof(g_wt[0]));
 
@@ -345,22 +357,34 @@ int WriteTestCount() { return kNumWt; }
 const char* WriteTestName(int i) { return g_wt[i].name; }
 const char* WriteTestPresetLabel(int i, int p) { return g_wt[i].p[p].label; }
 
-bool WriteTestApply(int i, int p) {
-  if (!Enabled() || i < 0 || i >= kNumWt || p < 0 || p > 2) return false;
-  WriteTest& t = g_wt[i];
+namespace {
+bool ApplyFactor(WriteTest& t, bool mul, float v, const char* label) {
   uint8_t* vb = VBase();
   if (!vb || !Resolve(t)) return false;
-  const Preset& pr = t.p[p];
   for (int k = 0; k < t.n; ++k) {
     uint32_t bits;
-    if (t.kind == Kind::kScalar && t.is_float) bits = FBits(pr.mul ? BitsF(t.stock[k]) * pr.v : pr.v);
-    else bits = uint32_t(int32_t(pr.mul ? float(int32_t(t.stock[k])) * pr.v : pr.v));
+    if (t.kind == Kind::kScalar && t.is_float) bits = FBits(mul ? BitsF(t.stock[k]) * v : v);
+    else bits = uint32_t(int32_t(mul ? float(int32_t(t.stock[k])) * v : v));
     StoreBe(At(vb, t, k), bits);
   }
   t.active = true;
-  t.last = p;
-  LogWrite(pr.label, t);
+  LogWrite(label, t);
   return true;
+}
+}  // namespace
+
+bool WriteTestApply(int i, int p) {
+  if (!Enabled() || i < 0 || i >= kNumWt || p < 0 || p > 2) return false;
+  WriteTest& t = g_wt[i];
+  t.last = p;
+  return ApplyFactor(t, t.p[p].mul, t.p[p].v, t.p[p].label);
+}
+
+void WriteTestHipCombo() {
+  if (!Enabled()) return;
+  for (const ComboStep& s : kHipCombo)
+    for (WriteTest& t : g_wt)
+      if (!std::strcmp(t.name, s.name)) ApplyFactor(t, true, s.factor, "hip-combo");
 }
 
 void WriteTestRestore(int i) {
@@ -395,7 +419,7 @@ void WriteTestDescribe(int i, char* buf, unsigned n) {
 // ---------------------------------------------------------------- TUN-9 catalog
 // Walks the image for every tweak object (signature: N -> "g..." name string, tag at N+8,
 // type class at N-8 inside the image, heap copy *(N+36) whose +4 is the same name pointer) and
-// writes rogue_tweak_catalog.tsv next to the exe: the real live value (N+32), N+20 and the
+// writes rogue_tweak_catalog.txt (tab-separated) next to the exe: the real live value (N+32), N+20 and the
 // min/max at N+24/N+28. Read-only. Feeds tools/find_tweak_consumers.py --catalog.
 namespace {
 bool IsTweakName(const uint8_t* s, uint32_t max) {
@@ -417,7 +441,7 @@ void CatalogWorker() {
   const DWORD t0 = GetTickCount();
   auto* ks = rex::runtime::current_kernel_state();
   uint8_t* vb = (ks && ks->memory()) ? ks->memory()->virtual_membase() : nullptr;
-  const auto path = rex::filesystem::GetExecutableFolder() / "rogue_tweak_catalog.tsv";
+  const auto path = rex::filesystem::GetExecutableFolder() / "rogue_tweak_catalog.txt";
   FILE* f = vb ? std::fopen(path.string().c_str(), "w") : nullptr;
   if (!f) { g_state.store(3); return; }
   const uint8_t* img = vb + kImgBase;
@@ -458,4 +482,368 @@ void CatalogAsync() {
   g_state.store(1);
   std::thread([] { CatalogWorker(); }).detach();
 }
+
+// ---------------------------------------------------------------- RE-1 sweep (round 3)
+// Rounds 1-2 (2026-10-29): the hip-check family (sub_83411E90 ...) and all 15 player-event
+// handlers (gEvtValPE_*, file 44) NEVER fired, in an exhibition and in a BAP game. The hook
+// method itself is fine: hook_refs.txt shows the function table registers `sub_X`, so direct
+// AND indirect calls reach the override (sub_83411E90 has 3 direct callers and still never ran).
+// Round 3 hooks EVERY function (141) that statically reads a hit / check / balance / fall /
+// collision tunable (TUN-9 readers, filtered; list + reasons in docs/re-findings.md). The log
+// has one line per second with the per-function call deltas (only non-zero ones, by address),
+// plus up to 2 call lines per second for functions that are NOT per-frame (< 30 calls in the
+// previous second). Hit code = functions whose counts jump at the owner's marked hits.
+namespace {
+const char* const kHooks[] = {
+  "828B9258",
+  "828CC300",
+  "828FEBD8",
+  "82929FB0",
+  "8292AE50",
+  "8292B550",
+  "8292B808",
+  "82936F28",
+  "829380A0",
+  "8293A148",
+  "8293A3E8",
+  "8293A998",
+  "8293AB78",
+  "82A3B770",
+  "82DBEFB0",
+  "82DBF2A0",
+  "83310E68",
+  "8331B8F0",
+  "83328180",
+  "83339558",
+  "8333F9C0",
+  "833442E8",
+  "8334F930",
+  "833A1F40",
+  "833B90E0",
+  "833B9730",
+  "833B9AE8",
+  "833BF998",
+  "833C09E8",
+  "833CA500",
+  "833E0BF8",
+  "833E3D58",
+  "833EBD80",
+  "833F27E8",
+  "833F3330",
+  "833F8AC8",
+  "8340C690",
+  "8340C7E0",
+  "8340DB90",
+  "83411AD0",
+  "83412298",
+  "83427068",
+  "83429800",
+  "834299F0",
+  "83429EC8",
+  "8342A2A8",
+  "8342A938",
+  "8342B290",
+  "8342B8C8",
+  "8342C628",
+  "8342CDD0",
+  "83437DF8",
+  "834551C8",
+  "834553D8",
+  "83459350",
+  "83465C48",
+  "83467988",
+  "8346E460",
+  "83470DF8",
+  "83470E48",
+  "83476288",
+  "834859E0",
+  "834BF428",
+  "834D8580",
+  "834E9FA8",
+  "834F0A48",
+  "834F24E0",
+  "835038B8",
+  "83505630",
+  "8350E600",
+  "8351AE18",
+  "8351B5A0",
+  "8351B6D0",
+  "83522198",
+  "83524F60",
+  "835334A0",
+  "83552AB8",
+  "8357F748",
+  "8357F9A0",
+  "8357FAC0",
+  "83580BF8",
+  "83580CE8",
+  "83580E90",
+  "83581208",
+  "83582C90",
+  "835831D0",
+  "835834E0",
+  "835844B0",
+  "83585028",
+  "835853A8",
+  "835888E8",
+  "83588BF8",
+  "83588ED8",
+  "83589190",
+  "83589570",
+  "83589B38",
+  "8358A348",
+  "8358D100",
+  "8358D310",
+  "8358D478",
+  "8358DBD0",
+  "8358DFC0",
+  "8358EB88",
+  "8358EE30",
+  "83593FC8",
+  "83594968",
+  "83594BD0",
+  "83594CB8",
+  "83595320",
+  "83596B38",
+  "83597360",
+  "83597FF0",
+  "83599B68",
+  "8359A1D0",
+  "8359B378",
+  "8359B600",
+  "8359B7C8",
+  "8359BA08",
+  "8359BF10",
+  "8359C3F8",
+  "8359C700",
+  "8359FAF0",
+  "8359FE68",
+  "835A06E8",
+  "835A1640",
+  "835A18C0",
+  "835A2338",
+  "835A3618",
+  "835A4258",
+  "835A47D0",
+  "835A4BE0",
+  "835A5F10",
+  "835A62E8",
+  "835A6CE0",
+  "835A7078",
+  "835A8690",
+  "835A98D0",
+  "835BD388",
+  "835CF688",
+  "835E7990",
+  "835EB920"};
+constexpr int kNumHooks = int(sizeof(kHooks) / sizeof(kHooks[0]));
+std::atomic<unsigned> g_hook_calls[kNumHooks];
+std::atomic<unsigned> g_hook_prev[kNumHooks];   // calls in the previous second
+std::atomic<unsigned> g_hook_sec[kNumHooks];
+std::atomic<int> g_hook_sec_n[kNumHooks];
+std::atomic<bool> g_flusher{false};
+std::mutex g_hook_mu;
+
+void HookLog(const char* line) {
+  std::lock_guard<std::mutex> lk(g_hook_mu);
+  const auto path = rex::filesystem::GetExecutableFolder() / "rogue_probe.txt";
+  if (FILE* f = std::fopen(path.string().c_str(), "a")) { std::fputs(line, f); std::fclose(f); }
+}
+
+void StartFlusher() {
+  bool expected = false;
+  if (!g_flusher.compare_exchange_strong(expected, true)) return;
+  std::thread([] {
+    static unsigned last[kNumHooks] = {};
+    static char buf[8192];
+    for (;;) {
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      int w = std::snprintf(buf, sizeof(buf), "hooks tick=%lu", (unsigned long)GetTickCount());
+      bool any = false;
+      for (int i = 0; i < kNumHooks; ++i) {
+        const unsigned now = g_hook_calls[i].load();
+        const unsigned d = now - last[i];
+        g_hook_prev[i].store(d);
+        last[i] = now;
+        if (!d) continue;
+        any = true;
+        if (w < int(sizeof(buf)) - 32) w += std::snprintf(buf + w, sizeof(buf) - w, " %s=%u", kHooks[i], d);
+      }
+      if (any) { std::snprintf(buf + w, sizeof(buf) - w, "\n"); HookLog(buf); }
+    }
+  }).detach();
+}
+}  // namespace
+
+void HookHit(int i, uint32_t r3, uint32_t r4, uint32_t r5, uint32_t r6, uint32_t r7,
+             unsigned long long lr) {
+  if (!Enabled()) return;
+  g_hook_calls[i].fetch_add(1, std::memory_order_relaxed);
+  StartFlusher();
+  if (g_hook_prev[i].load(std::memory_order_relaxed) >= 30) return;  // per-frame: counts only
+  const unsigned sec = unsigned(GetTickCount() / 1000u);
+  if (g_hook_sec[i].exchange(sec) != sec) g_hook_sec_n[i].store(0);
+  if (g_hook_sec_n[i].fetch_add(1) >= 2) return;
+  char buf[256];
+  std::snprintf(buf, sizeof(buf), "call %s tick=%lu r3=%08X r4=%08X r5=%08X r6=%08X r7=%08X lr=%08llX\n",
+                kHooks[i], (unsigned long)GetTickCount(), r3, r4, r5, r6, r7, lr);
+  HookLog(buf);
+}
+
+void Mark() {
+  if (!Enabled()) return;
+  char buf[96];
+  std::snprintf(buf, sizeof(buf), "MARK tick=%lu\n", (unsigned long)GetTickCount());
+  HookLog(buf);
+}
 }  // namespace rogue::probe
+
+// Strong overrides of the generated functions (same pattern as src/diag_hooks.cpp).
+#define ROGUE_PROBE_HOOK(addr, idx)                                                     \
+  REX_EXTERN(__imp__sub_##addr);                                                        \
+  extern "C" REX_FUNC(sub_##addr) {                                                     \
+    rogue::probe::HookHit(idx, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, \
+                          (unsigned long long)ctx.lr);                                  \
+    __imp__sub_##addr(ctx, base);                                                       \
+  }
+ROGUE_PROBE_HOOK(828B9258, 0)  // gSpeedBoostRatioForMinBalanceLoss
+ROGUE_PROBE_HOOK(828CC300, 1)  // gAccelToProhibitForwardTurns, gBalanceCarrierFallThreshold
+ROGUE_PROBE_HOOK(828FEBD8, 2)  // gEffectiveMinEnergy, gMinEnergyForNoEffectPK
+ROGUE_PROBE_HOOK(82929FB0, 3)  // gAlwaysUpdateBalanceRatio, gBalanceAdjustmentEnd
+ROGUE_PROBE_HOOK(8292AE50, 4)  // gHitBasedLengthCoefficient
+ROGUE_PROBE_HOOK(8292B550, 5)  // gCollisionBodyTension
+ROGUE_PROBE_HOOK(8292B808, 6)  // gContactCOMDelta, gDefaultCom
+ROGUE_PROBE_HOOK(82936F28, 7)  // gHitBasedBlacoutCoefficient, gHitBasedLengthCoefficient
+ROGUE_PROBE_HOOK(829380A0, 8)  // gClampDeltaAngle, gDrivenFallRelaxedModifier
+ROGUE_PROBE_HOOK(8293A148, 9)  // gCollisionVelocityCompensationValue
+ROGUE_PROBE_HOOK(8293A3E8, 10)  // gBalanceMax, gBalanceReactionMax
+ROGUE_PROBE_HOOK(8293A998, 11)  // gStumbleVelocityCompensationValue
+ROGUE_PROBE_HOOK(8293AB78, 12)  // gStumbleBodyTension
+ROGUE_PROBE_HOOK(82A3B770, 13)  // gDefSkaterBalance, gDefSkaterBodyChecking
+ROGUE_PROBE_HOOK(82DBEFB0, 14)  // gBoardHitIntensityScale
+ROGUE_PROBE_HOOK(82DBF2A0, 15)  // gPlayerHitIntensityScale
+ROGUE_PROBE_HOOK(83310E68, 16)  // gHandlePotentialKnockedOverPenaltiesTime, gHandlePotentialNotKnockedOverPenaltiesTime
+ROGUE_PROBE_HOOK(8331B8F0, 17)  // gKnockDownValue
+ROGUE_PROBE_HOOK(83328180, 18)  // gBoardPinchNoCollisionFrames
+ROGUE_PROBE_HOOK(83339558, 19)  // gMinPushAwayScale
+ROGUE_PROBE_HOOK(8333F9C0, 20)  // gBoardCollisionStressForMaxEffect, gBoardCollisionStressForMinEffect
+ROGUE_PROBE_HOOK(833442E8, 21)  // gSlowFallenGuysAfterThis
+ROGUE_PROBE_HOOK(8334F930, 22)  // gAugmentHipCheckYVelocity
+ROGUE_PROBE_HOOK(833A1F40, 23)  // gLayDownCollisionRadiusPadInches
+ROGUE_PROBE_HOOK(833B90E0, 24)  // gDirectHitForMax, gDirectHitForMin
+ROGUE_PROBE_HOOK(833B9730, 25)  // gGPPhysicalPreparednessForShooting
+ROGUE_PROBE_HOOK(833B9AE8, 26)  // gGPFallMax, gGPFallMin
+ROGUE_PROBE_HOOK(833BF998, 27)  // gMaxLowHitRatioForEffect, gMinLowHitRatioForEffect
+ROGUE_PROBE_HOOK(833C09E8, 28)  // gHitInjuryChanceMultiplier
+ROGUE_PROBE_HOOK(833CA500, 29)  // gBoardsCheckingEffectiveRating, gGPStumbleMin
+ROGUE_PROBE_HOOK(833E0BF8, 30)  // gGPFallMin
+ROGUE_PROBE_HOOK(833E3D58, 31)  // gBaseHitComparisonPriority
+ROGUE_PROBE_HOOK(833EBD80, 32)  // gHitsForIntimidatingShift
+ROGUE_PROBE_HOOK(833F27E8, 33)  // gBigHitterMinHitPct
+ROGUE_PROBE_HOOK(833F3330, 34)  // gTeamHitsMinHits
+ROGUE_PROBE_HOOK(833F8AC8, 35)  // gDesperationNoCollisionFrames
+ROGUE_PROBE_HOOK(8340C690, 36)  // gPhysicsRatingsDiffMax, gPhysicsRatingsDiffMin
+ROGUE_PROBE_HOOK(8340C7E0, 37)  // gSpecialCaseModifierShooting
+ROGUE_PROBE_HOOK(8340DB90, 38)  // gBodyTensionBase
+ROGUE_PROBE_HOOK(83411AD0, 39)  // gWeightOfRelativeSpeedToTarget, gWeightOfSpeedToTarget
+ROGUE_PROBE_HOOK(83412298, 40)  // gCheckeeDefaultBalance, gCheckerDefaultBalance
+ROGUE_PROBE_HOOK(83427068, 41)  // gBodyTensionBase
+ROGUE_PROBE_HOOK(83429800, 42)  // gBothBehaviorBalanceTunerMax, gBothBehaviorBalanceTunerMid
+ROGUE_PROBE_HOOK(834299F0, 43)  // gBalanceInequality, gBodyTensionBase
+ROGUE_PROBE_HOOK(83429EC8, 44)  // gBalanceInequality
+ROGUE_PROBE_HOOK(8342A2A8, 45)  // gBothBehaviorBalanceTunerMax, gBothBehaviorBalanceTunerMid
+ROGUE_PROBE_HOOK(8342A938, 46)  // gDefaultBalanceThreshold, gDefaultContactCOMRatio
+ROGUE_PROBE_HOOK(8342B290, 47)  // gPlayerPlayerDistanceToEnable
+ROGUE_PROBE_HOOK(8342B8C8, 48)  // gPlayerPlayerDistanceToEnable
+ROGUE_PROBE_HOOK(8342C628, 49)  // gHipCheckContactCOMRatio, gHipCheckNoVelocityUpdateFrames
+ROGUE_PROBE_HOOK(8342CDD0, 50)  // gPlayerPlayerDistanceToEnable
+ROGUE_PROBE_HOOK(83437DF8, 51)  // gDefaultBalance, gHipCheckRestartWithLowControlPenalty
+ROGUE_PROBE_HOOK(834551C8, 52)  // gBodyTensionBase
+ROGUE_PROBE_HOOK(834553D8, 53)  // gBodyTensionBase
+ROGUE_PROBE_HOOK(83459350, 54)  // gDegreesForFullLowHipSwing, gHipCheckLowIntentMinimalDistance
+ROGUE_PROBE_HOOK(83465C48, 55)  // gMaxFatigue, gRightSickFramesForHold
+ROGUE_PROBE_HOOK(83467988, 56)  // gBodyTensionBase
+ROGUE_PROBE_HOOK(8346E460, 57)  // gBodyTensionBase
+ROGUE_PROBE_HOOK(83470DF8, 58)  // gBodyTensionBase
+ROGUE_PROBE_HOOK(83470E48, 59)  // gBodyTensionBase
+ROGUE_PROBE_HOOK(83476288, 60)  // gAITuneAIHittingTunePenInjuryModifier, gAITuneAIHittingTunePenPlayoffsModifier
+ROGUE_PROBE_HOOK(834859E0, 61)  // gPenaltyChanceCrossChecking, gPenaltyChanceHitIntoBoards
+ROGUE_PROBE_HOOK(834BF428, 62)  // gBFFallOverMaxThreatDist, gChanceToFallOver
+ROGUE_PROBE_HOOK(834D8580, 63)  // gPlayPhysical_Hits, gPlayPhysical_WasHit
+ROGUE_PROBE_HOOK(834E9FA8, 64)  // gBalancePenalty_GlobalScale, gBalancePenalty_HitBumped
+ROGUE_PROBE_HOOK(834F0A48, 65)  // gHitterMaxDistToDestEffort, gHitterMaxDistToTarget
+ROGUE_PROBE_HOOK(834F24E0, 66)  // gManualHipCheckWinHeightFactor, gSpeedBasedHipCheckProportion
+ROGUE_PROBE_HOOK(835038B8, 67)  // gBoardPlayFootCollisionRadius
+ROGUE_PROBE_HOOK(83505630, 68)  // gBodyTensionBase
+ROGUE_PROBE_HOOK(8350E600, 69)  // gBoardCollisionAnticipationTime
+ROGUE_PROBE_HOOK(8351AE18, 70)  // gAutoHitAimingAtTargetDist, gAutoHitEarlyHitFrames
+ROGUE_PROBE_HOOK(8351B5A0, 71)  // gAutoHitDefaultCancelActionRefractoryPeriod
+ROGUE_PROBE_HOOK(8351B6D0, 72)  // gMinRelSpeedForAutoCheck, gMinSpeedToCareAboutRelSpeedForAutoCheck
+ROGUE_PROBE_HOOK(83522198, 73)  // gAggressiveCheckButtonTap
+ROGUE_PROBE_HOOK(83524F60, 74)  // gAutoCheckCancelDelay, gHipCheckRefractoryTime
+ROGUE_PROBE_HOOK(835334A0, 75)  // gPairUpAutoHitChance, gPairUpAutoHitChanceSuperstarVictim
+ROGUE_PROBE_HOOK(83552AB8, 76)  // gCheckingContinueAngle
+ROGUE_PROBE_HOOK(8357F748, 77)  // gCheckSpeedModerate, gCheckSpeedSlow
+ROGUE_PROBE_HOOK(8357F9A0, 78)  // gEndorphineHitInjuryTestFrequency
+ROGUE_PROBE_HOOK(8357FAC0, 79)  // gMaxDistForHit
+ROGUE_PROBE_HOOK(83580BF8, 80)  // gHowDoIStepUpGuarding
+ROGUE_PROBE_HOOK(83580CE8, 81)  // gStepUp_Shove_IncludeBackAnglePies
+ROGUE_PROBE_HOOK(83580E90, 82)  // gHowDoIStepUpShove
+ROGUE_PROBE_HOOK(83581208, 83)  // gDeflectionNoCollisionFrames
+ROGUE_PROBE_HOOK(83582C90, 84)  // gBenchSitHitReactXOffset
+ROGUE_PROBE_HOOK(835831D0, 85)  // gBenchHitBoardDist, gBenchHitReactionDist
+ROGUE_PROBE_HOOK(835834E0, 86)  // gBenchHitReactionDist
+ROGUE_PROBE_HOOK(835844B0, 87)  // gHookReactTimeScale, gTripFallFrequency
+ROGUE_PROBE_HOOK(83585028, 88)  // gHitAssistAccelScale, gHitAssistMaxSpeedScale
+ROGUE_PROBE_HOOK(835853A8, 89)  // gAssumedHitterSpeed
+ROGUE_PROBE_HOOK(835888E8, 90)  // gMaxFramesToAllowCheckingLayer
+ROGUE_PROBE_HOOK(83588BF8, 91)  // gBiasedStrengthSizeAvg, gHitTune_GlobalScale
+ROGUE_PROBE_HOOK(83588ED8, 92)  // gMaxCheckIntentForHipCheck
+ROGUE_PROBE_HOOK(83589190, 93)  // gEndorphineBoardHitSizeDiff
+ROGUE_PROBE_HOOK(83589570, 94)  // gBackPieHitSpeedThreshold, gCheckCollisionRadiusMoving
+ROGUE_PROBE_HOOK(83589B38, 95)  // gBigHitIntimidation, gBigHitIntimidationReduction
+ROGUE_PROBE_HOOK(8358A348, 96)  // gTimeAfterReleaseForHitToCount
+ROGUE_PROBE_HOOK(8358D100, 97)  // gTriggerCancelDist
+ROGUE_PROBE_HOOK(8358D310, 98)  // gMaxDistToDestForHitCancelInMeters
+ROGUE_PROBE_HOOK(8358D478, 99)  // gInterceptTimeForCheckIntentTrigger, gMaxDistToDestForHitInMeters
+ROGUE_PROBE_HOOK(8358DBD0, 100)  // gGuardingActionEffort
+ROGUE_PROBE_HOOK(8358DFC0, 101)  // gIZGuardingActionEffort
+ROGUE_PROBE_HOOK(8358EB88, 102)  // gFinishChecks_MaxTimeBuffer, gFinishChecks_MaxUndisciplinedLateHit
+ROGUE_PROBE_HOOK(8358EE30, 103)  // gExtraShoveDistanceScale, gStepUp_Shove_DistFromBoards
+ROGUE_PROBE_HOOK(83593FC8, 104)  // gElbowLikelihoodScale
+ROGUE_PROBE_HOOK(83594968, 105)  // gDistForOpponentToBeConsideredCheckable, gMinNumFramesBetweenHit
+ROGUE_PROBE_HOOK(83594BD0, 106)  // gDefaultBalance
+ROGUE_PROBE_HOOK(83594CB8, 107)  // gBenchHitMaxCheckeeSpeed, gEndorphineBoardHitMinCheckingRating
+ROGUE_PROBE_HOOK(83595320, 108)  // gBoardplayGameEventFrame, gBoardplaySizeDiffCheckExit
+ROGUE_PROBE_HOOK(83596B38, 109)  // gPlayerFaceDiffMaxDegrees, gPlayerSizeDiffMax
+ROGUE_PROBE_HOOK(83597360, 110)  // gMomentumMaintainedWin, gMomentumPhysicsCheckingAttributeWeightBoost
+ROGUE_PROBE_HOOK(83597FF0, 111)  // gMaxFramesSinceLastTouchForNoPenalty
+ROGUE_PROBE_HOOK(83599B68, 112)  // gCheckingActionAngleToFacing, gCheckingActionEffort
+ROGUE_PROBE_HOOK(8359A1D0, 113)  // gNearBoardsHighSlotCheckAngle
+ROGUE_PROBE_HOOK(8359B378, 114)  // gHowDoIStepUpPoking
+ROGUE_PROBE_HOOK(8359B600, 115)  // gHowDoIStepUpBoardPin, gStepUp_BoardPin_DefMaxSpeed
+ROGUE_PROBE_HOOK(8359B7C8, 116)  // gShoveFrequency, gShoveMinScore
+ROGUE_PROBE_HOOK(8359BA08, 117)  // gChecking_NoSwitchTargetDist, gStepUp_SortMethod
+ROGUE_PROBE_HOOK(8359BF10, 118)  // gCheckingHumanPrevCarrierTicks
+ROGUE_PROBE_HOOK(8359C3F8, 119)  // gStepUpPossibleHitMaxDistApart, gStepUpPossibleHitPlayerReach
+ROGUE_PROBE_HOOK(8359C700, 120)  // gChecking_SlowSpeedDecline, gChecking_SlowSpeedDeclineRadiusMax
+ROGUE_PROBE_HOOK(8359FAF0, 121)  // gDefaultBalance
+ROGUE_PROBE_HOOK(8359FE68, 122)  // gBracingPenalty, gFacingAngleDifferenceWeight
+ROGUE_PROBE_HOOK(835A06E8, 123)  // gDigAnimPctPenaltyCheckEnd, gDigAnimPctPenaltyCheckStart
+ROGUE_PROBE_HOOK(835A1640, 124)  // gSlashActionEffort
+ROGUE_PROBE_HOOK(835A18C0, 125)  // gCheckingFromBehind_DistReq, gCheckingFromBehind_SpeedDiff
+ROGUE_PROBE_HOOK(835A2338, 126)  // gHowDoIStepUpMinValidScore
+ROGUE_PROBE_HOOK(835A3618, 127)  // gMissedBoardhitDelayFrames
+ROGUE_PROBE_HOOK(835A4258, 128)  // gAllowHitFromBehindBoardDist, gHitTune_ClosingSpeedForMax
+ROGUE_PROBE_HOOK(835A47D0, 129)  // gMinStressForCoincidental
+ROGUE_PROBE_HOOK(835A4BE0, 130)  // gMaxForceDistBoardsDistRatio, gMinHeightForBoarding
+ROGUE_PROBE_HOOK(835A5F10, 131)  // gSlashHighChance
+ROGUE_PROBE_HOOK(835A62E8, 132)  // gChecking_SlowSpeedDeclineProbMax
+ROGUE_PROBE_HOOK(835A6CE0, 133)  // gSmallHitIntimidation
+ROGUE_PROBE_HOOK(835A7078, 134)  // gFinishChecks_MaxTimeBuffer, gInstigationChanceIntimidation
+ROGUE_PROBE_HOOK(835A8690, 135)  // gBenchHitResultVel, gBoardplayAngleDiff
+ROGUE_PROBE_HOOK(835A98D0, 136)  // gMaxFramesToFindCollidingPlayer
+ROGUE_PROBE_HOOK(835BD388, 137)  // gDeviation_FallingRecoveryTime
+ROGUE_PROBE_HOOK(835CF688, 138)  // gMinPushAwayScale
+ROGUE_PROBE_HOOK(835E7990, 139)  // gBoardCollisionLeadTime, gHitLossChancePerFrame
+ROGUE_PROBE_HOOK(835EB920, 140)  // gNoPlayerCollisionFrames, gPlayerCollisionClosestPlayerDist

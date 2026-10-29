@@ -96,6 +96,169 @@ note wall-clock times, so firing counts can be correlated with events.
 
 (append newest first: date, agent, what was probed, what fired, conclusion)
 
+- 2026-10-29, Victoria: RE-1 round 2. Player-event handlers PE_CHECK/CHECKED/DIVING_CHECK/GOAL/
+  ASSIST/SHOT_ATTEMPT/GOODSHOT/PLUS/MINUS/WIN_GAME/LOSE_GAME/OT_LOSE_GAME/TIE_GAME/PENALTY/
+  FACEOFFWIN + PE_NONE: never fired in an exhibition or a BAP game (hook method verified via
+  the function table). Round 3 sweep targets (function, tunables it reads):
+  sub_828B9258  gSpeedBoostRatioForMinBalanceLoss
+  sub_828CC300  gAccelToProhibitForwardTurns, gBalanceCarrierFallThreshold, gBalanceStableThresholdVariation
+  sub_828FEBD8  gEffectiveMinEnergy, gMinEnergyForNoEffectPK
+  sub_82929FB0  gAlwaysUpdateBalanceRatio, gBalanceAdjustmentEnd, gBalanceAdjustmentStart
+  sub_8292AE50  gHitBasedLengthCoefficient
+  sub_8292B550  gCollisionBodyTension
+  sub_8292B808  gContactCOMDelta, gDefaultCom
+  sub_82936F28  gHitBasedBlacoutCoefficient, gHitBasedLengthCoefficient
+  sub_829380A0  gClampDeltaAngle, gDrivenFallRelaxedModifier, gDrivenFallTenseModifier
+  sub_8293A148  gCollisionVelocityCompensationValue
+  sub_8293A3E8  gBalanceMax, gBalanceReactionMax, gBalanceReactionScale
+  sub_8293A998  gStumbleVelocityCompensationValue
+  sub_8293AB78  gStumbleBodyTension
+  sub_82A3B770  gDefSkaterBalance, gDefSkaterBodyChecking
+  sub_82DBEFB0  gBoardHitIntensityScale
+  sub_82DBF2A0  gPlayerHitIntensityScale
+  sub_83310E68  gHandlePotentialKnockedOverPenaltiesTime, gHandlePotentialNotKnockedOverPenaltiesTime
+  sub_8331B8F0  gKnockDownValue
+  sub_83328180  gBoardPinchNoCollisionFrames
+  sub_83339558  gMinPushAwayScale
+  sub_8333F9C0  gBoardCollisionStressForMaxEffect, gBoardCollisionStressForMinEffect, gBoardCollisionStressMaxEffect
+  sub_833442E8  gSlowFallenGuysAfterThis
+  sub_8334F930  gAugmentHipCheckYVelocity
+  sub_833A1F40  gLayDownCollisionRadiusPadInches
+  sub_833B90E0  gDirectHitForMax, gDirectHitForMin, gDirectHitValueAtMax
+  sub_833B9730  gGPPhysicalPreparednessForShooting
+  sub_833B9AE8  gGPFallMax, gGPFallMin, gGPIncidentalMin
+  sub_833BF998  gMaxLowHitRatioForEffect, gMinLowHitRatioForEffect, gMinLowHitSize
+  sub_833C09E8  gHitInjuryChanceMultiplier
+  sub_833CA500  gBoardsCheckingEffectiveRating, gGPStumbleMin, gGlobalBalanceScale
+  sub_833E0BF8  gGPFallMin
+  sub_833E3D58  gBaseHitComparisonPriority
+  sub_833EBD80  gHitsForIntimidatingShift
+  sub_833F27E8  gBigHitterMinHitPct
+  sub_833F3330  gTeamHitsMinHits
+  sub_833F8AC8  gDesperationNoCollisionFrames
+  sub_8340C690  gPhysicsRatingsDiffMax, gPhysicsRatingsDiffMin, gPhysicsRatingsWeight
+  sub_8340C7E0  gSpecialCaseModifierShooting
+  sub_8340DB90  gBodyTensionBase
+  sub_83411AD0  gWeightOfRelativeSpeedToTarget, gWeightOfSpeedToTarget
+  sub_83412298  gCheckeeDefaultBalance, gCheckerDefaultBalance, gMaxBalance
+  sub_83427068  gBodyTensionBase
+  sub_83429800  gBothBehaviorBalanceTunerMax, gBothBehaviorBalanceTunerMid, gBothBehaviorBalanceTunerMin
+  sub_834299F0  gBalanceInequality, gBodyTensionBase, gBodyTensionCoeff
+  sub_83429EC8  gBalanceInequality
+  sub_8342A2A8  gBothBehaviorBalanceTunerMax, gBothBehaviorBalanceTunerMid, gBothBehaviorBalanceTunerMin
+  sub_8342A938  gDefaultBalanceThreshold, gDefaultContactCOMRatio
+  sub_8342B290  gPlayerPlayerDistanceToEnable
+  sub_8342B8C8  gPlayerPlayerDistanceToEnable
+  sub_8342C628  gHipCheckContactCOMRatio, gHipCheckNoVelocityUpdateFrames, gHipCheckWeightMin
+  sub_8342CDD0  gPlayerPlayerDistanceToEnable
+  sub_83437DF8  gDefaultBalance, gHipCheckRestartWithLowControlPenalty, gHipCheckRestartWithLowControlTime
+  sub_834551C8  gBodyTensionBase
+  sub_834553D8  gBodyTensionBase
+  sub_83459350  gDegreesForFullLowHipSwing, gHipCheckLowIntentMinimalDistance, gHipCheckLowIntentSpeedProportion
+  sub_83465C48  gMaxFatigue, gRightSickFramesForHold
+  sub_83467988  gBodyTensionBase
+  sub_8346E460  gBodyTensionBase
+  sub_83470DF8  gBodyTensionBase
+  sub_83470E48  gBodyTensionBase
+  sub_83476288  gAITuneAIHittingTunePenInjuryModifier, gAITuneAIHittingTunePenPlayoffsModifier, gAITuneAIHittingTunePenSecondPeriodModifier
+  sub_834859E0  gPenaltyChanceCrossChecking, gPenaltyChanceHitIntoBoards, gPenaltyChanceStumbleInterference
+  sub_834BF428  gBFFallOverMaxThreatDist, gChanceToFallOver, gSpecialSaveBFFallOverMinSpeed
+  sub_834D8580  gPlayPhysical_Hits, gPlayPhysical_WasHit
+  sub_834E9FA8  gBalancePenalty_GlobalScale, gBalancePenalty_HitBumped
+  sub_834F0A48  gHitterMaxDistToDestEffort, gHitterMaxDistToTarget, gHitterMinDistToTarget
+  sub_834F24E0  gManualHipCheckWinHeightFactor, gSpeedBasedHipCheckProportion, gSpeedBasedHipCheckWinBack
+  sub_835038B8  gBoardPlayFootCollisionRadius
+  sub_83505630  gBodyTensionBase
+  sub_8350E600  gBoardCollisionAnticipationTime
+  sub_8351AE18  gAutoHitAimingAtTargetDist, gAutoHitEarlyHitFrames, gAutoHitExtraFeetToEarlyHit
+  sub_8351B5A0  gAutoHitDefaultCancelActionRefractoryPeriod
+  sub_8351B6D0  gMinRelSpeedForAutoCheck, gMinSpeedToCareAboutRelSpeedForAutoCheck
+  sub_83522198  gAggressiveCheckButtonTap
+  sub_83524F60  gAutoCheckCancelDelay, gHipCheckRefractoryTime
+  sub_835334A0  gPairUpAutoHitChance, gPairUpAutoHitChanceSuperstarVictim
+  sub_83552AB8  gCheckingContinueAngle
+  sub_8357F748  gCheckSpeedModerate, gCheckSpeedSlow
+  sub_8357F9A0  gEndorphineHitInjuryTestFrequency
+  sub_8357FAC0  gMaxDistForHit
+  sub_83580BF8  gHowDoIStepUpGuarding
+  sub_83580CE8  gStepUp_Shove_IncludeBackAnglePies
+  sub_83580E90  gHowDoIStepUpShove
+  sub_83581208  gDeflectionNoCollisionFrames
+  sub_83582C90  gBenchSitHitReactXOffset
+  sub_835831D0  gBenchHitBoardDist, gBenchHitReactionDist
+  sub_835834E0  gBenchHitReactionDist
+  sub_835844B0  gHookReactTimeScale, gTripFallFrequency
+  sub_83585028  gHitAssistAccelScale, gHitAssistMaxSpeedScale, gHitAssistanceNumFramesPrediction
+  sub_835853A8  gAssumedHitterSpeed
+  sub_835888E8  gMaxFramesToAllowCheckingLayer
+  sub_83588BF8  gBiasedStrengthSizeAvg, gHitTune_GlobalScale, gHitTune_HitteeBalanceForMax
+  sub_83588ED8  gMaxCheckIntentForHipCheck
+  sub_83589190  gEndorphineBoardHitSizeDiff
+  sub_83589570  gBackPieHitSpeedThreshold, gCheckCollisionRadiusMoving, gCheckCollisionRadiusMovingPush
+  sub_83589B38  gBigHitIntimidation, gBigHitIntimidationReduction, gDecEnergyForHitScale_1Player_Hittee
+  sub_8358A348  gTimeAfterReleaseForHitToCount
+  sub_8358D100  gTriggerCancelDist
+  sub_8358D310  gMaxDistToDestForHitCancelInMeters
+  sub_8358D478  gInterceptTimeForCheckIntentTrigger, gMaxDistToDestForHitInMeters
+  sub_8358DBD0  gGuardingActionEffort
+  sub_8358DFC0  gIZGuardingActionEffort
+  sub_8358EB88  gFinishChecks_MaxTimeBuffer, gFinishChecks_MaxUndisciplinedLateHit, gFinishChecks_MinTimeBuffer
+  sub_8358EE30  gExtraShoveDistanceScale, gStepUp_Shove_DistFromBoards
+  sub_83593FC8  gElbowLikelihoodScale
+  sub_83594968  gDistForOpponentToBeConsideredCheckable, gMinNumFramesBetweenHit
+  sub_83594BD0  gDefaultBalance
+  sub_83594CB8  gBenchHitMaxCheckeeSpeed, gEndorphineBoardHitMinCheckingRating, gEndorphineHitBoardDist
+  sub_83595320  gBoardplayGameEventFrame, gBoardplaySizeDiffCheckExit, gCheckForBoardplayPenaltyFrequency
+  sub_83596B38  gPlayerFaceDiffMaxDegrees, gPlayerSizeDiffMax
+  sub_83597360  gMomentumMaintainedWin, gMomentumPhysicsCheckingAttributeWeightBoost, gMomentumPhysicsHitterWeightBoost
+  sub_83597FF0  gMaxFramesSinceLastTouchForNoPenalty
+  sub_83599B68  gCheckingActionAngleToFacing, gCheckingActionEffort, gCheckingActionMaxLookAheadFrames
+  sub_8359A1D0  gNearBoardsHighSlotCheckAngle
+  sub_8359B378  gHowDoIStepUpPoking
+  sub_8359B600  gHowDoIStepUpBoardPin, gStepUp_BoardPin_DefMaxSpeed, gStepUp_BoardPin_MinPlayers
+  sub_8359B7C8  gShoveFrequency, gShoveMinScore
+  sub_8359BA08  gChecking_NoSwitchTargetDist, gStepUp_SortMethod
+  sub_8359BF10  gCheckingHumanPrevCarrierTicks
+  sub_8359C3F8  gStepUpPossibleHitMaxDistApart, gStepUpPossibleHitPlayerReach, gStepUpPossibleHitPredictEnd
+  sub_8359C700  gChecking_SlowSpeedDecline, gChecking_SlowSpeedDeclineRadiusMax, gChecking_SlowSpeedDeclineRadiusMin
+  sub_8359FAF0  gDefaultBalance
+  sub_8359FE68  gBracingPenalty, gFacingAngleDifferenceWeight, gIntentWeight
+  sub_835A06E8  gDigAnimPctPenaltyCheckEnd, gDigAnimPctPenaltyCheckStart, gDigNoCollisionFrames
+  sub_835A1640  gSlashActionEffort
+  sub_835A18C0  gCheckingFromBehind_DistReq, gCheckingFromBehind_SpeedDiff, gCheckingScoreTraitFactorNonPhysical
+  sub_835A2338  gHowDoIStepUpMinValidScore
+  sub_835A3618  gMissedBoardhitDelayFrames
+  sub_835A4258  gAllowHitFromBehindBoardDist, gHitTune_ClosingSpeedForMax, gHitTune_ClosingSpeedForMin
+  sub_835A47D0  gMinStressForCoincidental
+  sub_835A4BE0  gMaxForceDistBoardsDistRatio, gMinHeightForBoarding
+  sub_835A5F10  gSlashHighChance
+  sub_835A62E8  gChecking_SlowSpeedDeclineProbMax
+  sub_835A6CE0  gSmallHitIntimidation
+  sub_835A7078  gFinishChecks_MaxTimeBuffer, gInstigationChanceIntimidation, gIntimidationOnInstigationChanceThreshold
+  sub_835A8690  gBenchHitResultVel, gBoardplayAngleDiff, gBoardplayAngleOpponentApproachMe
+  sub_835A98D0  gMaxFramesToFindCollidingPlayer
+  sub_835BD388  gDeviation_FallingRecoveryTime
+  sub_835CF688  gMinPushAwayScale
+  sub_835E7990  gBoardCollisionLeadTime, gHitLossChancePerFrame, gSkateIntoBoardsCollisionRetentionMultiplier
+  sub_835EB920  gNoPlayerCollisionFrames, gPlayerCollisionClosestPlayerDist, gPlayerCollisionImpactDist
+
+- 2026-10-29, Victoria: RE-1 round 1 hooks, 30 min exhibition. NEVER fired: sub_83411E90,
+  sub_83411C48, sub_83429698, sub_83589230 (hip-check family + hit power). sub_8342C628: ~385/s,
+  lr 0x8342D13C, r3 = ~14 distinct 0xA9xxxxxx values (skater objects, OBSERVED). sub_83588BF8:
+  bursts, lr 0x835A44E4 (95%) / 0x8343832C, r3/r4 = two skater objects. Round 2: PE_* handlers.
+
+- 2026-10-29, Victoria: TUN-9 catalog + static readers. 10,583 tweak objects, 7,779 read by code.
+  Hip-check code CANDIDATES (by which tunables each function reads):
+  sub_83411E90 (file 133): RadiusMax/Min, AngleMin/Max/Tuner, SpeedMin/Max/Tuner, WeightMin/Max/
+  Tuner, DistanceTuner, BalanceRatioTotalThreshold, BehaviorBalanceTunerMax -> hip-check scoring.
+  sub_83411C48 (133): LookAheadTime, RadiusMin, RadiusMaxest, PositionOffset -> target acquisition.
+  sub_83429698 (134): BalanceThreshold, BehaviorMin/Max, BehaviorBalanceTunerMin/Mid/Max,
+  ContactCOMRatio -> knockdown decision. sub_8342C628 (134): ContactCOMRatio, WeightMin,
+  NoVelocityUpdateFrames -> contact. Hit: sub_83588BF8 (gHitTune_GlobalScale), sub_83589230
+  (gHitPowerForPhysicsGlobalModifier), sub_83588ED8 (gMaxCheckIntentForHipCheck). Skating
+  sub_828CC300 reads the fall thresholds and many hip-check control values.
+  Shot code: sub_833E87E0 (slap power/accuracy scales), sub_833ECF68 (wrist power).
+
 - 2026-10-29, Victoria: TUN-5b write test on N+32 + H+36. gSlapShotPowerScale x0.2 / x10 and
   gLODShader 0 / 2 changed gameplay / rendering immediately; x10 exceeds the object's max (2.0),
   so game code does not clamp. Game-style heap + static tables set to 0 / 20: no visible effect.

@@ -18,7 +18,7 @@ resolve `rN + disp` inside load/store expressions, then match against each objec
 TUN-9 catalog mode (every tweak object, from the panel's "Dump tweak catalog" button):
 
   python mods/legacy_rogue/tools/find_tweak_consumers.py --generated generated/default \
-      --catalog out/build/win-amd64-vk-ffx/rogue_tweak_catalog.tsv --out tweak_readers.tsv
+      --catalog out/build/win-amd64-vk-ffx/rogue_tweak_catalog.txt --out tweak_readers.txt
 
 writes one row per tunable: how many functions LOAD its live value (N+32, CONFIRMED by TUN-5b)
 and which. Tunables with readers are the ones a perk can drive by writing N+32.
@@ -82,7 +82,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--generated", required=True, help="generated/default directory")
     ap.add_argument("--out", default=None)
-    ap.add_argument("--catalog", default=None, help="rogue_tweak_catalog.tsv (TUN-9 mode)")
+    ap.add_argument("--catalog", default=None, help="rogue_tweak_catalog.txt (TUN-9 mode, tab-separated)")
     a = ap.parse_args()
     if a.catalog:
         return catalog_mode(a)

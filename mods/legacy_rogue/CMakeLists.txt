@@ -10,6 +10,7 @@ target_sources(nhllegacy PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src/rogue_hooks.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/rogue_panel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/rogue_probe.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/tweak_index.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/reactions.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/fx.cpp)
 target_include_directories(nhllegacy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)

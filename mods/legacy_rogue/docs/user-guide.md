@@ -98,23 +98,18 @@ Finds where the engine really keeps a setting's value. Read-only; it never chang
    **Snapshot: after edit**. Wait for Done, then reset the setting.
 6. Quit and upload `out\build\win-amd64-vk-ffx\rogue_probe.txt`.
 
-### 4b. Write test + tweak catalog (TUN-5c / TUN-9, 2026-10-29)
+### 4b. Perk readout + hit sweep (RE-1 round 3, 2026-10-29)
 
-Writes game memory, but only the listed settings and only when you click. Restart to undo.
-Delete the old `rogue_probe.txt` first.
-1. Launch `run_probe.bat`. At the main menu open the overlay, Legacy Rogue, Diagnostics, and
-   click **Dump tweak catalog (TUN-9)**. Wait for Done (writes `rogue_tweak_catalog.tsv`).
-2. Start a match. In **Write test (TUN-5c)**, one setting at a time, try its buttons and note
-   what changes, then **Restore**:
-   - `gSlapShotPowerScale` x3 / x10 / x30: slap shot speed.
-   - `gHitPowerForPhysicsGlobalModifier`, `gHitPowerForPhysicsRatingModifier`: hit force.
-   - `gBalanceOffpuckFallThreshold`, `gBalanceCarrierFallThreshold`: how easily players fall
-     (just skate into people; no big hit needed).
-   - `gHumanTriggerCheckDist`, `gHipCheckRadiusMax`: how far away a check can start.
-   - `gPenaltyChanceCharging` =0 / x10: charging calls (hard to test; optional).
-3. Quit. From the repo root:
-   `python mods\legacy_rogue\tools\find_tweak_consumers.py --generated generated\default --catalog out\build\win-amd64-vk-ffx\rogue_tweak_catalog.tsv --out tweak_readers.tsv`
-4. Upload `rogue_tweak_catalog.tsv`, `tweak_readers.tsv`, `rogue_probe.txt`, and your notes.
+Incremental build is enough. Delete the old `rogue_probe.txt`.
+1. **Perk readout** (`run_dev.bat` is fine): start a career and take any setting perk (Cannon,
+   Freight Train, Jet Skates ...). In the panel open **Active perk effects (stock -> live)**: all
+   grey "(stock)". Click BAP game started: the perk's settings show `stock -> new value`. Click BAP
+   game ended: back to grey. Report what you saw.
+2. **Sweep** (`run_probe.bat`, any mode): play normally for about a minute with no contact, click
+   **Mark log**, then throw checks. Click **Mark log** right after each landed check and note what
+   kind it was (light, big, boards, knockdown, hip check, you got hit). Ten or more landed checks
+   is ideal; misses do not need a mark.
+3. Upload `rogue_probe.txt` and your numbered marks.
 
 ## 5. Starting a fresh agent session
 
