@@ -96,6 +96,11 @@ note wall-clock times, so firing counts can be correlated with events.
 
 (append newest first: date, agent, what was probed, what fired, conclusion)
 
+- 2026-10-29, Victoria: STATIC search for readers of snapshot +636 / +640. sub_830E65F8 (file 107)
+  is NOT balance code (constant table 0x83C0CBC0, size-320 guard, 40-step complex multiply-add
+  loop). Callers of the snapshot sub_828CC300: sub_8332AF40, sub_828F1550, sub_82920828,
+  sub_82933A40, sub_8293B9A8, sub_8293BF80 (files 125, 40, 42, 43, 43, 44).
+
 - 2026-10-29, Victoria: STATIC read of nhllegacy_recomp.39.cpp. sub_828CC300 = skating settings
   snapshot into a struct at r3 (map: docs/skating_params_struct.txt). Bools are read as the byte
   at object base+29 = N+21. Ragdoll blend-out code: sub_828C75A8 (gBlendOut*ForceScale),

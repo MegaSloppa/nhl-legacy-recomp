@@ -289,3 +289,21 @@ RE-1 analysis of the sweep log.
 `docs/current-status.md`, `docs/handoff-log.md`, `docs/re-findings.md`, `docs/00-START-HERE.md`.
 **Validation:** static only; slice tool self-tested on file 39.
 **Next action:** user-guide 4b runs; `slice_generated.py offset 640 --float` over all files.
+
+### 2026-10-29 (13:15) - Victoria - Fall-threshold consumer search; session end
+**Objective:** Find the code that reads the snapshot's fall thresholds (+636 / +640).
+**Done:**
+- `slice_generated.py offset 640/636 --float` over all files: 10 / 9 functions. Best-looking hit
+  sub_830E65F8 (file 107, reads +632..+648 together) is a FALSE POSITIVE: it reads a constant
+  table at 0x83C0CBC0, runs only when its size argument == 320, and loops 40x doing complex
+  multiply-adds (FFT / transform butterfly). Other hits: stack slots, idle PE handlers,
+  sub_8334A360 (file 126, copies r29+640 / +648 to the stack; weak, unexplored).
+- Lesson: an offset search only finds `reg + 640` accesses; the snapshot struct is probably
+  embedded in a larger object, so consumers use (struct offset in parent) + 640. Check WHICH
+  register / base an offset is read from before calling a hit a lead.
+- Callers of sub_828CC300: sub_8332AF40 (125), sub_828F1550 (40), sub_82920828 (42),
+  sub_82933A40, sub_8293B9A8 (43), sub_8293BF80 (44). Added `callsite` to slice_generated.py.
+**Files changed:** `tools/slice_generated.py`, `docs/current-status.md`, `docs/handoff-log.md`,
+`docs/re-findings.md`.
+**Validation:** static only.
+**Next action:** see current-status "Recommended next action" (sweep run first).

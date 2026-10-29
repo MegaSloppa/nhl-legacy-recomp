@@ -7,6 +7,9 @@
       every function that calls it directly (+ file); indirect callers are not visible
   python mods/legacy_rogue/tools/slice_generated.py callees sub_828CC300
       direct callees of a function and its number of indirect calls
+  python mods/legacy_rogue/tools/slice_generated.py callsite sub_828CC300 [--context 20]
+      for every direct call of a function: the lines BEFORE the call (shows how r3..r8 are
+      set up, e.g. which object / offset is passed in)
   python mods/legacy_rogue/tools/slice_generated.py offset 640 [--float] [--context 6]
       every load / store at displacement +640 from any register (e.g. struct fields), with
       a few lines of context; --float keeps only REX_LOAD_U32 into temp (lfs pattern)
@@ -37,7 +40,7 @@ def iter_funcs(gen):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["func", "callers", "callees", "offset"])
+    ap.add_argument("cmd", choices=["func", "callers", "callees", "callsite", "offset"])
     ap.add_argument("arg")
     ap.add_argument("--generated", default="generated/default")
     ap.add_argument("--max", type=int, default=200)
@@ -67,6 +70,19 @@ def main():
                 out.append(f"{name} ({f}): {len(calls)} direct callees, "
                            f"{body.count('REX_CALL_INDIRECT_FUNC')} indirect calls\n")
                 out += [c + "\n" for c in calls]
+                break
+    elif a.cmd == "callsite":
+        pat = a.arg + "(ctx, base)"
+        for name, f, buf in iter_funcs(a.generated):
+            if name == a.arg:
+                continue
+            for i, l in enumerate(buf):
+                if pat in l:
+                    lo = max(0, i - a.context)
+                    out.append(f"=== {name} ({f}) line {i}\n")
+                    out += [x.strip() + "\n" for x in buf[lo:i + 2] if not x.strip().startswith("//")]
+                    n += 1
+            if n >= a.max:
                 break
     else:
         off = int(a.arg, 0)
