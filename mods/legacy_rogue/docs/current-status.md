@@ -92,6 +92,8 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 | TUN-5c | Write test round 3 (slap x30, fall thresholds, hit power, check reach, charging penalty) | U | DONE 2026-10-29: slap x3 -> x30 differs less than the numbers (puck speed probably capped, extra power goes into lift); fall thresholds (stock 25/23, x10) and check distances: nothing undeniable; `gPenaltyChanceCharging` stock is 0; `gHitPowerForPhysicsRatingModifier` is a tag-12 slider (not supported) |
 | TUN-9 | Full catalog + static readers | U then A | DONE 2026-10-29: 10,583 tweak objects (tags: 8,009 float, 1,549 int, 484 slider, 396 tag-11, 145 game-style); 7,779 have a static reader of N+32. Hip-check code identified (re-findings.md) |
 | TUN-10 | Hip-check write test + combo | U | DONE 2026-10-29: inconclusive (hip checks are too hard to land to judge); the combo maybe made knockdowns a bit easier. Parked until a hook can force the interaction |
+| TUN-11 | Bool tweak objects (tag 1, ~1,100 e.g. gTriggerFalls) are missing from the TUN-9 catalog and TweakIndex: their layout differs (value byte at N+21; the heap-copy check fails). Extend the scan | A | TODO |
+| TUN-12 | Skating settings snapshot: sub_828CC300 copies ~890 tweak values into a ~3.4 KB struct (r3); skating code reads the COPY. Map: `docs/skating_params_struct.txt` (822 named, e.g. +636 gBalanceCarrierFallThreshold, +640 gBalanceOffpuckFallThreshold, +596..+648 gBalance_*). Find how often it runs (in the RE-1 sweep list) and the struct address (sweep call lines log r3). If rare: apply skating perks before the match or patch the struct directly | A+U | NEXT (with the sweep) |
 | TUN-6 | `TunablePatcher` writes the live value via the new `TweakIndex` (image scan; N+32 + H+36); perk_catalog / reactions rebuilt on tunables with static readers | A | DONE 2026-10-29 (needs `_game_ffx_build.bat`: new tweak_index.cpp). Owner to verify Cannon in play |
 | TUN-7 | (low; TUN-5b showed no effect, probably presets applied elsewhere) Game-style tables (tag 13): which entry is the active style, and what range a level has (seen: GameSpeed 5/4/3, SlapShotPower 5/4/4, WristShotAccuracy 6/5/3) | A+U | TODO |
 | TUN-1 | Stock values + ranges for perk tunables | A | DONE 2026-10-29 via TUN-9 (values in perk_catalog.cpp comments) |
@@ -133,7 +135,8 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 
 1. Owner: apply the zip (incremental build). Check the new "Active perk effects" readout (user-guide
    4b step 1), then run the round-3 sweep script, upload `rogue_probe.txt` + numbered marks.
-2. Agent: line up per-function call spikes with the marked hits; the function that jumps once per
+2. Agent: also read the sweep counts for sub_828CC300 (TUN-12: snapshot cadence, r3 = struct).
+   Then line up per-function call spikes with the marked hits; the function that jumps once per
    landed check (and not otherwise) is the hit-resolution candidate. Then read its args to find
    hitter / hittee (compare with the skater objects seen in sub_8342C628 r3).
 

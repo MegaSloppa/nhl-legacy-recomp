@@ -90,6 +90,9 @@ mods/legacy_rogue/
                                 rogue_probe.cpp = diagnostics (NHL_ROGUE_PROBE=1)
   tools/find_bap_code.py        string/tunable anchor -> function cross-ref
   tools/perk_candidates.py      tunable search by theme
+  tools/find_tweak_consumers.py static readers of tweak objects (TUN-8/9)
+  tools/slice_generated.py      extract a function / callers / callees / field-offset uses
+                                from generated/default (upload the output as .txt)
   docs/                         this folder
 ```
 
@@ -114,6 +117,7 @@ When you add a .cpp, say explicitly that the owner must use `_game_ffx_build.bat
 | `handoff-log.md` | Append-only session log | Every session |
 | `design.md` | Game design + open design questions | Design changes (owner approves) |
 | `re-findings.md` | Address ledger + tweak object layout, with evidence and confidence | Any RE result |
+| `skating_params_struct.txt` | Field map of the skating settings snapshot (sub_828CC300) | When re-derived |
 | `user-guide.md` | Human instructions: build, enable, play, run probes, upload | Workflow changes |
 
 ## 6. Glossary

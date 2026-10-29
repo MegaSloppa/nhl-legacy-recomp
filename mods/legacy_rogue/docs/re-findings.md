@@ -96,6 +96,11 @@ note wall-clock times, so firing counts can be correlated with events.
 
 (append newest first: date, agent, what was probed, what fired, conclusion)
 
+- 2026-10-29, Victoria: STATIC read of nhllegacy_recomp.39.cpp. sub_828CC300 = skating settings
+  snapshot into a struct at r3 (map: docs/skating_params_struct.txt). Bools are read as the byte
+  at object base+29 = N+21. Ragdoll blend-out code: sub_828C75A8 (gBlendOut*ForceScale),
+  sub_828C7D50 (gBehaviorPitchUprightThreshold), sub_828CB380 (gHandInfluenceDistance*).
+
 - 2026-10-29, Victoria: RE-1 round 2. Player-event handlers PE_CHECK/CHECKED/DIVING_CHECK/GOAL/
   ASSIST/SHOT_ATTEMPT/GOODSHOT/PLUS/MINUS/WIN_GAME/LOSE_GAME/OT_LOSE_GAME/TIE_GAME/PENALTY/
   FACEOFFWIN + PE_NONE: never fired in an exhibition or a BAP game (hook method verified via

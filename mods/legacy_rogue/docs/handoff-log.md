@@ -271,3 +271,21 @@ all new perk tunables except gSlapShotPowerScale are unverified in play.
 **Proven / hypotheses:** unchanged from the previous entry.
 **Next action:** owner commits; next session runs user-guide 4b (perk readout + hit sweep), then
 RE-1 analysis of the sweep log.
+
+### 2026-10-29 (13:00) - Victoria - Static analysis of nhllegacy_recomp.39.cpp
+**Objective:** Owner uploaded generated file 39 (skating); read it statically.
+**Done:**
+- sub_828CC300 (8,600 lines) is a SETTINGS SNAPSHOT: it copies ~890 tweak values (N+32 for
+  float/int, N+21 byte for bools) into a struct at r3 (stores up to +3352). 822 fields named via
+  the TUN-9 catalog -> `docs/skating_params_struct.txt`. No direct callers in file 39.
+- Hypothesis: skating code reads the copy, so live tweak edits only apply when the snapshot
+  re-runs; explains the no-effect fall-threshold test (TUN-5c). Sweep will show cadence (TUN-12).
+- Bool objects are absent from the catalog (TUN-11).
+- Rest of file 39: ragdoll blend-out / pitch-upright / hand-influence code (sub_828C75A8,
+  sub_828C7D50, sub_828CB380); largest functions are component code with 60-117 indirect calls.
+  Offset 640 is not read anywhere in file 39 (struct consumers live in other files).
+- New tool `tools/slice_generated.py` (func / callers / callees / offset) for targeted slices.
+**Files changed:** `docs/skating_params_struct.txt` (new), `tools/slice_generated.py` (new),
+`docs/current-status.md`, `docs/handoff-log.md`, `docs/re-findings.md`, `docs/00-START-HERE.md`.
+**Validation:** static only; slice tool self-tested on file 39.
+**Next action:** user-guide 4b runs; `slice_generated.py offset 640 --float` over all files.
