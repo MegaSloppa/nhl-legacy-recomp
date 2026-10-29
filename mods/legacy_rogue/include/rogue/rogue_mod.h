@@ -13,6 +13,7 @@ class TunablePatcher;
 void Init(nhl::ui::ITunableStore* store);
 void Tick();
 void DrawPanel();
+bool Enabled();  // NHL_ROGUE=1. Everything user-visible must check this (rule 1).
 
 // Lifecycle. Called by hooks once addresses are known (addresses.h), or by the
 // panel's manual buttons until then.

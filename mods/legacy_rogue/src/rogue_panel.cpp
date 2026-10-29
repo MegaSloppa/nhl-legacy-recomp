@@ -1,10 +1,13 @@
 // Legacy Rogue - ImGui panel inside the enhancements overlay (Guide/F1).
 // Until lifecycle/stat hooks exist, the "Manual" section stands in for them.
+// The overlay itself belongs to the parent project; only THIS section is gated on
+// NHL_ROGUE=1 (00-START-HERE rule 1).
 #include <imgui.h>
 #include <cstdio>
 #include <vector>
 #include "rogue/fx.h"
 #include "rogue/perks.h"
+#include "rogue/probe.h"
 #include "rogue/rogue_mod.h"
 #include "rogue/run_state.h"
 
@@ -19,6 +22,25 @@ const char* RarityName(Rarity r) {
   static const char* n[] = {"Common", "Rare", "Epic", "Legendary"};
   return n[int(r)];
 }
+// Offers are rolled once per shop visit. After a free pick is spent the remaining
+// offers must show their real price again (BUG-1: they stayed FREE, free went negative).
+void RefreshFreeFlags() {
+  for (auto& o : g_offer) o.free = Run().PendingFreePick() && !o.perk->is_curse;
+}
+void DrawDiagnostics() {
+  if (!probe::Enabled()) return;
+  ImGui::SeparatorText("Diagnostics (NHL_ROGUE_PROBE=1)");
+  ImGui::TextWrapped("TUN-4 tunable probe. Read-only. Each button appends one snapshot to "
+                     "rogue_probe.txt next to the exe.");
+  ImGui::BeginDisabled(probe::Busy());
+  if (ImGui::Button("Snapshot: menu")) probe::RunAsync("menu");
+  ImGui::SameLine();
+  if (ImGui::Button("Snapshot: in match")) probe::RunAsync("in match");
+  ImGui::SameLine();
+  if (ImGui::Button("Snapshot: after edit")) probe::RunAsync("after edit (GameSpeedLevel=20)");
+  ImGui::EndDisabled();
+  ImGui::TextDisabled("%s", probe::Status());
+}
 }  // namespace
 
 void OpenShop() {
@@ -28,10 +50,12 @@ void OpenShop() {
 }
 
 void DrawPanel() {
+  if (!Enabled()) return;  // BUG-2: hide the whole section without NHL_ROGUE=1
   if (!ImGui::CollapsingHeader("Legacy Rogue (Be-A-Pro)")) return;
   auto& r = Run().run();
   auto& m = Run().meta();
   ImGui::Text("Legacy: %d   Best career score: %d", m.legacy, m.best_legacy_score);
+  DrawDiagnostics();
   if (!r.active) {
     ImGui::InputText("Career name", g_career, sizeof(g_career));
     if (ImGui::Button("Start Legacy Rogue career")) {
@@ -64,6 +88,7 @@ void DrawPanel() {
       if (ImGui::Button(label, ImVec2(260, 0)) && Run().Buy(o)) {
         fx::Push(fx::Kind::kPerkBought, o.perk->name);
         g_offer.erase(g_offer.begin() + i);
+        RefreshFreeFlags();
         ImGui::EndDisabled(); ImGui::PopID();
         break;
       }

@@ -74,3 +74,7 @@
 # Vendored ReXGlue SDK (fetched + pinned + patched by scripts/setup_sdk.ps1)
 /third_party/rexglue-sdk/
 run_dev.bat
+build_dev.bat
+codegen_log.txt
+game_build_log.txt
+modded_game_build_log.txt

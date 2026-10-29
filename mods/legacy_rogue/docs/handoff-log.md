@@ -83,3 +83,39 @@ docs/00-START-HERE.md (delivered as zip; GitHub writes still fail from the agent
 **Proven:** wiring is final; parent scripts clean.
 **Hypotheses / unresolved:** nothing about runtime behavior is verified yet.
 **Next action:** BUILD-3 smoke test (owner), TUN-1 (agent).
+
+### 2026-10-29 - Victoria - Smoke test passed; tunable perks found inert; probe + 2 bug fixes
+**Objective:** Guide BUILD-3, then act on what it found.
+**Done:**
+- Guided the owner through BUILD-3 (all from the panel; no match needed while hooks are
+  unmapped). All 5 checks PASS on commit 3d595fe.
+- BUG-1 found from the owner's report (two perks owned after one free pick, save `free=-1`):
+  `RollShop` marks every non-curse offer free while a pick exists and the panel never
+  refreshed the flags after a buy. Fixed in `Buy`, the panel and `Load`.
+- BUG-2 (found by reading `rogue_panel.cpp`): `DrawPanel` had no `NHL_ROGUE` check. Added
+  `rogue::Enabled()`; only the Legacy Rogue section is hidden, the parent overlay is unchanged.
+- Owner in-match test of `gTweakByGameStyleGameSpeedLevel` (0 and 20): no visible effect, not
+  rewritten by whistles or the game's own speed setting.
+- Analysed `docs/tunable_values_runtime.txt` joined with `docs/tunables_schema.tsv` (sandbox
+  script): record+8 values cluster by TYPE (floats 4, bools 1, game-style 13), see the Key
+  finding in current-status.md.
+- Wrote the TUN-4 probe: `src/rogue_probe.cpp` + `include/rogue/probe.h`, panel Diagnostics
+  section (only with `NHL_ROGUE=1` and `NHL_ROGUE_PROBE=1`). Read-only; dumps the registry
+  records for 12 tunables plus whatever their pointer fields point at, to `rogue_probe.txt`.
+  Uses `rex::runtime::current_kernel_state()->memory()->virtual_membase()` (same API as
+  diag_hooks.cpp) and the same committed-memory walk as `TunableRuntimeStore::Build`.
+**Files changed:**
+- `src/rogue_probe.cpp` (new), `include/rogue/probe.h` (new) - TUN-4 probe.
+- `CMakeLists.txt` - adds rogue_probe.cpp (owner must use `scripts\_game_ffx_build.bat`).
+- `src/rogue_panel.cpp` - BUG-1 flag refresh, BUG-2 gate, Diagnostics buttons.
+- `src/run_state.cpp` - BUG-1 guard in `Buy`, `free` clamp in `Load`.
+- `include/rogue/rogue_mod.h`, `src/rogue_mod.cpp` - `rogue::Enabled()`.
+- `docs/current-status.md`, `docs/handoff-log.md`, `docs/user-guide.md`.
+**Validation:** BUILD-3 owner report PASS. New code NOT compiled by the agent (no local build).
+**Proven:** smoke test results above; the record+8 value distribution; GameSpeedLevel edit has
+no visible effect and is not rewritten.
+**Hypotheses / unresolved:** record+8 is a type tag and the live value is elsewhere (TUN-4).
+The probe's include set mirrors diag_hooks.cpp; if `virtual_membase()` or an include does not
+resolve, fix the include, not the approach. The 0..20 ranges in tunables_schema.tsv are inferred.
+00-START-HERE.md file map not yet updated for probe.h / rogue_probe.cpp.
+**Next action:** BUILD-7 then TUN-4 probe run (owner); TUN-4 analysis (agent).

@@ -1,7 +1,7 @@
 # User guide (for Cherlyn)
 
 You do the parts that need your PC and the game. Agents do the code and the analysis.
-Last updated 2026-10-28.
+Last updated 2026-10-29.
 
 ## 1. Repo setup (done)
 
@@ -43,6 +43,9 @@ set NHL_VK_BACKEND=1
 set NHL_ROGUE=1
 "%~dp0out\build\win-amd64-vk-ffx\nhllegacy.exe" --game_data_root "T:\nhl-legacy-recomp-0.6.0\game\game"
 ```
+Without `NHL_ROGUE=1` the Legacy Rogue section does not appear in the overlay (the overlay
+itself always does).
+
 In game:
 1. Open the overlay (Guide or F1), open **Legacy Rogue (Be-A-Pro)**.
 2. Type a career name, click **Start Legacy Rogue career**, take your free perk.
@@ -55,11 +58,16 @@ In game:
 Saves: `rogue_career.txt`, `rogue_meta.txt` next to the exe. Your real BAP save is never
 touched. Delete them to reset.
 
-**Smoke test (BUILD-3)** - report pass/fail for each:
+**Known limit (2026-10-29):** perks that change engine settings (Cannon, Sniper Scope, Freight
+Train, Jet Skates, Iron Lungs, Captain's Aura, the curses) do not affect gameplay yet, and the
+value they write may not be a real setting value. Avoid them in real play until TUN-4 is done.
+
+**Smoke test (BUILD-3)** - PASSED 2026-10-29. Kept for re-testing after big changes:
 1. Career start: enter a name, click Start Legacy Rogue career. Perk Shop opens with a free pick.
+   After you take it, the other offers show a Hype price (not FREE).
 2. FX: press Test FX: crit, then close the menu at once. Gold CRITICAL! + flash stays ~1 s.
-3. Perk applies: take Cannon (or any non-curse perk), press BAP game started. In Engine Tunables
-   search the perk's setting (Cannon: `gTweakByGameStyleSlapShotPowerLevel`): orange
+3. Perk applies: take Cannon (or any non-curse setting perk), press BAP game started. In Engine
+   Tunables search the perk's setting (Cannon: `gTweakByGameStyleSlapShotPowerLevel`): orange
    (overridden) and 1 above stock. The index needs ~12 s after boot; wait and search again.
 4. Revert: press BAP game ended. The setting returns to stock.
 5. Saves: `rogue_career.txt` and `rogue_meta.txt` exist in `out\build\win-amd64-vk-ffx\`.
@@ -75,6 +83,20 @@ python mods\legacy_rogue\tools\find_bap_code.py "<path>\default.decompressed.exe
 Upload `bap_hits.txt`. Probe rounds (3 to 5): the agent sends a probe file plus a short
 script ("start a BAP game, make 3 big hits 10 s apart, quit"). Build, run with
 `set NHL_ROGUE_PROBE=1`, do the script, upload `rogue_probe.txt` from the exe folder.
+
+### 4a. TUN-4 tunable probe (2026-10-29)
+
+Finds where the engine really keeps a setting's value. Read-only; it never changes the game.
+1. Make a copy of `run_dev.bat` named `run_probe.bat` and add `set NHL_ROGUE_PROBE=1` under
+   `set NHL_ROGUE=1`.
+2. Delete any old `rogue_probe.txt` in `out\build\win-amd64-vk-ffx\`.
+3. Launch `run_probe.bat`. At the main menu wait ~20 s, open the overlay, open Legacy Rogue,
+   click **Snapshot: menu** in the Diagnostics section. Wait until it says Done (up to a minute;
+   the game may stutter).
+4. Start any match. During play open the overlay and click **Snapshot: in match**. Wait for Done.
+5. Still in the match: in Engine Tunables set `gTweakByGameStyleGameSpeedLevel` to 20, then click
+   **Snapshot: after edit**. Wait for Done, then reset the setting.
+6. Quit and upload `out\build\win-amd64-vk-ffx\rogue_probe.txt`.
 
 ## 5. Starting a fresh agent session
 

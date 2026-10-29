@@ -30,6 +30,7 @@ void ApplyLayers() {
 }
 }  // namespace
 
+bool Enabled() { return g_enabled; }
 TunablePatcher* Patcher() { return g_patcher; }
 bool InBapGame() { return g_enabled && g_in_game && Run().run().active; }
 

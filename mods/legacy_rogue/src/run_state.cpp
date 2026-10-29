@@ -116,9 +116,16 @@ std::vector<ShopOffer> RogueRun::RollShop() {
 
 bool RogueRun::Buy(const ShopOffer& o) {
   if (!o.perk) return false;
-  if (o.free) --free_picks_;
-  else if (run_.hype < o.price) return false;
-  else run_.hype -= o.price;  // negative price (curse) adds Hype
+  if (o.free) {
+    // BUG-1 (2026-10-29): stale FREE offers let every offer be taken and drove
+    // free_picks_ negative. Never spend a pick that does not exist.
+    if (free_picks_ <= 0 || o.perk->is_curse) return false;
+    --free_picks_;
+  } else if (run_.hype < o.price) {
+    return false;
+  } else {
+    run_.hype -= o.price;  // negative price (curse) adds Hype
+  }
   for (auto& p : run_.perks) if (p.id == o.perk->id) { ++p.stacks; Save(); return true; }
   run_.perks.push_back({o.perk->id, 1});
   Save();
@@ -160,7 +167,7 @@ void RogueRun::Load() {
     else if (k == "season") run_.season = I();
     else if (k == "hype") run_.hype = I();
     else if (k == "notoriety") run_.notoriety = I();
-    else if (k == "free") free_picks_ = I();
+    else if (k == "free") free_picks_ = std::max(0, I());  // repairs saves hit by BUG-1
     else if (k == "tot_goals") run_.tot_goals = I();
     else if (k == "tot_points") run_.tot_points = I();
     else if (k == "tot_kd") run_.tot_knockdowns = I();
