@@ -59,6 +59,54 @@ void DrawPerkEffects() {
   ImGui::TreePop();
 }
 
+// RE-1 round 6: recent contacts as the hit watch sees them (newest first), the ME counters and
+// the power test.
+void PlayerTag(char* out, size_t n, uint32_t va, bool me, bool goalie, bool autom) {
+  if (me && autom) std::snprintf(out, n, "ME*");
+  else if (me) std::snprintf(out, n, "ME");
+  else if (autom) std::snprintf(out, n, "AUTO");
+  else if (goalie) std::snprintf(out, n, "G%04X", unsigned(va & 0xFFFFu));
+  else std::snprintf(out, n, "%04X", unsigned(va & 0xFFFFu));
+}
+void DrawHitWatch() {
+  ImGui::SeparatorText("Hit watch (RE-1 round 7)");
+  ImGui::TextWrapped("Every body contact shows on screen as hitter -> victim. ME = the player you "
+                     "claimed (Manual section: That was me). AUTO = the automatic marker being tested; ME* = "
+                     "both agree. G = goalie.");
+  const probe::YouStats y = probe::YouCounts();
+  ImGui::Text("ME so far: %d hits, %d knockdowns of skaters, knocked down %d times", y.hits,
+              y.knockdowns, y.knocked_down);
+  ImGui::SameLine();
+  if (ImGui::SmallButton("Reset counts")) probe::YouReset();
+  ImGui::Text("AUTO marker vs claim: agree %d, missed you %d, marked someone else %d  |  "
+              "no claim: %d contacts with an AUTO player", y.auto_agree, y.auto_missed,
+              y.auto_wrong, y.auto_seen);
+  ImGui::TextUnformatted("Power test (ME's hits only):");
+  const float k = probe::PowerTest();
+  const float opts[] = {1.f, 1.15f, 1.3f, 2.f};
+  const char* labels[] = {"off", "x1.15", "x1.3", "x2"};
+  for (int i = 0; i < 4; ++i) {
+    ImGui::SameLine();
+    if (ImGui::RadioButton(labels[i], k == opts[i])) probe::SetPowerTest(opts[i]);
+  }
+  const int count = probe::HitEventCount();
+  if (!count) { ImGui::TextDisabled("No contacts yet."); return; }
+  const unsigned long now = probe::TickNow();
+  for (int i = 0; i < count; ++i) {
+    probe::HitEvent e;
+    if (!probe::HitEventGet(i, &e)) break;
+    char hn[16], vn[16], st[8];
+    PlayerTag(hn, sizeof(hn), e.hitter, e.hitter_me, e.hitter_goalie, e.hitter_auto);
+    PlayerTag(vn, sizeof(vn), e.victim, e.victim_me, e.victim_goalie, e.victim_auto);
+    if (e.strength < 0) std::snprintf(st, sizeof(st), "-");
+    else std::snprintf(st, sizeof(st), "%d", e.strength);
+    ImGui::Text("%5.0f s ago  %5s -> %-5s  %-9s  power %.2f%s  str %s  credit %s  fall %s%s",
+                double(now - e.tick) / 1000.0, hn, vn, e.knockdown ? "KNOCKDOWN" : "hit",
+                double(e.power), e.boosted ? " (boosted)" : "", st, e.credited ? "yes" : "no",
+                e.fall ? "yes" : "no", e.counted ? "  [counted]" : "");
+  }
+}
+
 void DrawDiagnostics() {
   if (!probe::Enabled()) return;
   ImGui::SeparatorText("Diagnostics (NHL_ROGUE_PROBE=1)");
@@ -75,6 +123,7 @@ void DrawDiagnostics() {
   if (ImGui::Button("Mark log")) probe::Mark();
   ImGui::EndDisabled();
   ImGui::TextDisabled("%s", probe::Status());
+  DrawHitWatch();
 
   ImGui::SeparatorText("Write test (TUN-10 hip checks)");
   ImGui::TextWrapped("Writes the field the game's code reads (or every game-style table entry). "
@@ -169,6 +218,24 @@ void DrawPanel() {
 
   ImGui::SeparatorText("Manual (until lifecycle/stat hooks are mapped)");
   if (ImGui::Button("BAP game started")) OnBapGameStart();
+  // RE-2 is not solved: you tell the mod which player is yours, once per game. During the game,
+  // right after a check: "I hit" if your pro delivered the latest contact, "I got hit" if he took it.
+  ImGui::BeginDisabled(!InBapGame());
+  if (ImGui::Button("That was me: I hit") && LastContactHitter()) {
+    SetBapPlayer(LastContactHitter());
+    probe::DumpPlayersForClaim(BapPlayer());
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("That was me: I got hit") && LastContactVictim()) {
+    SetBapPlayer(LastContactVictim());
+    probe::DumpPlayersForClaim(BapPlayer());
+  }
+  ImGui::EndDisabled();
+  if (BapPlayer())
+    ImGui::Text("Your pro: %04X  |  this game: %d hits, %d knockdowns (counted by the mod)",
+                unsigned(BapPlayer() & 0xFFFFu), r.live.hits, r.live.knockdowns);
+  else if (InBapGame())
+    ImGui::TextDisabled("Your pro is not claimed yet: make a check, then press That was me.");
   ImGui::RadioButton("Won", &g_won, 1); ImGui::SameLine(); ImGui::RadioButton("Lost", &g_won, 0);
   ImGui::SetNextItemWidth(90); ImGui::InputInt("G", &g_manual.goals); ImGui::SameLine();
   ImGui::SetNextItemWidth(90); ImGui::InputInt("A", &g_manual.assists); ImGui::SameLine();

@@ -1,7 +1,7 @@
 # Current status (AUTHORITATIVE)
 
-Last updated: 2026-10-29 (session checkpoint, 12:00) by Victoria (monday.com agent). If this
-disagrees with another doc, this wins; fix the other doc.
+Last updated: 2026-10-30 (18:45) by Hannah (monday.com agent). If this disagrees with another doc,
+this wins; fix the other doc.
 
 ## Baseline
 
@@ -9,55 +9,116 @@ disagrees with another doc, this wins; fix the other doc.
   `MegaSloppa/nhl-legacy-recomp`). Wiring is final: `rogue::fx::Draw()` and `rogue::Tick()` run
   every frame, `rogue::DrawPanel()` only while the menu is open.
 - **BUILD-3 smoke test PASSED 2026-10-29** (owner, commit 3d595fe): career start, FX with the
-  menu closed, perk layers write the store (13 -> 14), revert at game end (back to 13), save
-  files. Hype 80 / Notoriety 61 for G2 A1 Hits3 +/-2 Won, exactly as computed from run_state.cpp.
-- **Tunable perks write the live value since TUN-6 (2026-10-29)** through `TweakIndex`
-  (N+32 + heap copy H+36, CONFIRMED by TUN-5b). The parent ITunableStore is no longer used by the
-  mod (it edits the TYPE TAG, N+8). All perk tunables are GLOBAL (CPU players get them too)
-  until per-player hooks exist; only Cannon's tunable is confirmed in play.
-- No guest addresses are known. All event perks are inert. Shop, Notoriety, FX and saves are
-  driven by the panel's Manual buttons.
+  menu closed, perk layers write the store, revert at game end, save files.
+- **Tunable perks write the live value since TUN-6** through `TweakIndex` (N+32 + heap copy
+  H+36, CONFIRMED by TUN-5b). The parent ITunableStore is no longer used by the mod (it edits the
+  TYPE TAG, N+8). **Perk readout verified 2026-10-30** (owner): wrist shot power showed
+  stock -> perk value after "BAP game started" and returned to stock after "BAP game ended".
+  All perk tunables are GLOBAL (CPU players get them too) until per-player hooks exist; only
+  Cannon's tunable is confirmed to change gameplay.
+- **Hit detection CONFIRMED (RE-1, rounds 3-4, 2026-10-30):** the hit contact `sub_833E0BF8` and
+  its knockdown reaction value are in `addresses.h`; the hook lives in `rogue_hooks.cpp`.
+- **The BAP player is claimed by hand (2026-10-30 17:45 package):** RE-2 round 5 rejected the
+  +0x38 "human" byte. The panel's "That was me" buttons claim the latest contact's hitter / victim;
+  with a claim the mod counts the pro's hits and knockdowns of skaters in a BAP game (works, round
+  6: 27 hits / 13 knockdowns in 2 periods; the game's own hit stat is narrower, see below).
+- **First event perks (2026-10-30 18:45 package, untested in a real run):** Freight Train (+15%
+  hit power per stack) and Wrecking Ball (every normal hit becomes a knockdown) act on the claimed
+  pro's hits only, through the reaction choice hook (CONFIRMED mechanism).
+- Event perks are still inert. Shop, Notoriety, FX and saves are driven by the panel's Manual
+  buttons.
 - Owner's toolchain: VS Build Tools 2026 + standalone LLVM + Vulkan SDK + PowerShell 7.
   Every setup problem hit so far and its fix: `user-guide.md` section 7.
-- GitHub: agents can READ the fork but writes fail from the agent's connection (as of
-  2026-10-28). Deliver changes as a zip of changed files only.
+- GitHub: agents can READ the fork but writes fail from the agent's connection. Deliver changes
+  as a zip of changed files only (00-START-HERE rule 12).
 
-## Checkpoint 2026-10-29 12:00 (owner on a break; read this first)
+## Checkpoint 2026-10-30 (18:45)
 
-Committed on GitHub: up to 3ce8b2a (N+32 confirmed, catalog, write tests). The owner's working
-tree additionally has three applied, BUILT but UNTESTED packages (to be committed together):
-- TUN-6 perk write path: `tweak_index.h/.cpp` (new), `tunable_patch.h`, `rogue_mod.cpp`,
-  rebuilt `perk_catalog.cpp` / `reactions.cpp`, catalog/readers files as `.txt`. Owner saw
-  "Tunable index ready" in the panel (index builds); perks themselves not yet verified.
-- RE-1 rounds 2-3 probes in `rogue_probe.cpp` (round 2 result already analysed: PE_* idle).
-- "Active perk effects (stock -> live)" readout in `rogue_panel.cpp`.
-First things to do next session: user-guide 4b step 1 (perk readout) and step 2 (hit sweep),
-then analyse the sweep log (see Recommended next action).
-Untested-in-play items: every perk tunable except gSlapShotPowerScale; Notoriety reactions.
+Committed on GitHub: up to 6f4d665. The 17:45 package was built and run (round 6). Delivered
+18:45 as a zip + commit message for a checkpoint commit (owner pushes):
+- `include/rogue/addresses.h`: ROGUE_ADDR_REACTION_DISPATCH 83429560, ROGUE_ADDR_REACTION_CHOICE
+  833B9028, ROGUE_VA_REACTION_TABLE (CONFIRMED); +0x22C as a commented candidate.
+- `src/rogue_hooks.cpp`: reaction dispatcher + choice hooks (moved from the probe), BapHitPower
+  (Freight Train / Wrecking Ball); the unused CHECK_RESOLVE stub is gone.
+- `include/rogue/perks.h`, `src/perk_catalog.cpp`: kHitPowerBoost; Freight Train is now an event
+  perk (+15% per stack, was global tunables); Wrecking Ball live.
+- `src/rogue_probe.cpp`, `include/rogue/probe.h`, `src/rogue_panel.cpp`: round 7 hit watch (AUTO
+  marker from +0x22C vs the claim, agreement counters).
+- Docs: re-findings.md, user-guide.md (4e), this file, handoff-log.md. No new .cpp.
+Still stale: `00-START-HERE.md` file map / mechanism table (says no guest addresses are known).
 
-## Key finding 2026-10-29 (TUN-4): record+8 is a type tag, not the value (PROVEN by probe)
+## Key finding 2026-10-30 (round 6): hit outcome is decided by power, and we can change it
 
-Proven:
-- In `docs/tunable_values_runtime.txt` the 11,158 resolved `field+8` values collapse to a few
-  small integers: 4 (7,227), 2 (1,360), 1 (1,110), 12/14/11/13 (1,441 together).
-- Joined with `docs/tunables_schema.tsv` types: float-typed names read 4 in 4,287 of 4,881
-  cases (including multipliers such as `gSlapShotPowerMultiplier`); bool-typed names read 1 in
-  1,084 of 1,148; all 77 `gTweakByGameStyle*` read 13, including non-sliders such as
-  `gTweakByGameStylePoweredPassingOption` and `...StrategyAdjustmentsBAP`.
-- Only about 9 entries hold a plausible float (e.g. `gDekeRatEffect` = 0.2, the parent's sanity
-  value), so a sanity check on that one value does not validate the store.
-- Owner test 2026-10-29, in a match: `gTweakByGameStyleGameSpeedLevel` 13 -> 0 and 13 -> 20 had
-  no visible effect; the game's own speed setting did not change the 13; a whistle did not
-  reset the edit (so the value is neither read live nor rewritten).
-Probe result (owner run, 3 snapshots): record+8 matches the object's type-class pointer for all 7
-objects decoded; the value lives at record+20 (min +24, max +28, default +32) plus a heap copy.
-Full layout and evidence: re-findings.md. Still unproven: which copy the game reads, and whether
-writing it changes gameplay (TUN-5). This would
-affect the parent project's Engine Tunables editor for nearly every entry (its live-effect test
-is still listed as pending in `docs/engine-settings-editor-plan.md`). Parent files are NOT
-changed by this mod (rule 12); report to the owner once proven.
-Risk note: writing a type tag could misbehave. Owner should not use tunable perks in real play
-until TUN-4 is resolved.
+- `sub_833B9028` picks the reaction from power with a table at 0x83ABF528: <= ~0.5 no hit
+  reaction, <= ~0.75 hit, above = knockdown. All 1836 logged decisions match.
+- Raising the power for the claimed pro's hits (test x1.15 / x1.3 / x2) changed outcomes exactly
+  as predicted: x1.3 turned 5 of 6 normal hits into knockdowns; nothing abnormal happened.
+- The game's own hit stat (5 in 2 periods) counts far fewer hits than any contact (27) or the
+  credit pair (19); the owner thinks it only counts hits on the puck carrier. The mod keeps its
+  own definition (any hit reaction you cause) for Hype.
+- Candidate automatic BAP marker: player byte +0x22C = 0x00 on the pro, 0xFF on 20 others.
+
+## Key finding 2026-10-30 (round 5 + reaction slice)
+
+- Byte +0x38 is a reaction state, not a human flag (REJECTED). `sub_834EA6D0(player, 0)` is a
+  team query (0 / 1 by team, all 40 players). No automatic way to find the BAP player yet.
+- The reaction (knockdown or not) is chosen by `sub_833B9028` from the power computed by
+  `sub_833CA500`, inside the dispatcher `sub_83429560` (static). Round 5 power (58 contacts): every
+  knockdown 0.763-0.962, every normal hit 0.501-0.734, so the threshold sits near 0.75. Round 6 tests raising the power for the claimed player's hits.
+
+## Key finding 2026-10-30 (RE-1 round 4 + static read)
+
+- Round 4 (owner, exhibition + training, 59 contacts / 39 interactions): hitter -> victim always
+  right on screen; knockdown labels consistent. One contact call per player who REACTS, so one
+  collision gives 1-3 lines. Goalies take the knockdown reaction but do not fall (no fall code);
+  goalie objects have a different class pointer (0x8223F648 vs skater 0x82271C10).
+- `sub_8357F9A0` r7 is the hitter object, not a strength (round 3's 0..3 came from
+  `sub_83589B38` r7). Credit ran for 27 of 39 interactions.
+- Player object byte +0x38 = 0x02 on exactly 2 of 34 objects, both the owner's player at the time
+  (in the exhibition he switched players, so it probably means "controlled right now"). Byte
+  +0x39 = player index, +0x30 = team side. Details: re-findings.md "Player object".
+- Static (hit_slices.txt): `sub_833E0BF8` is bookkeeping after the hit is decided (updates
+  per-player sub-objects at +564: who hit whom, durations 30 / 300); r6 is never read by it (the
+  caller `sub_83429560` passes its r30); *r5 is compared against gGPFallMin (hit power?);
+  `sub_834EA6D0(hitter, 0)` picks a human / CPU table entry (candidate human query). The
+  knockdown decision is upstream in `sub_83429560` (file 134).
+
+## Key finding 2026-10-30 (RE-1 round 3): the game's hit pipeline (OBSERVED, one session)
+
+Source: owner run, training mode 1-on-1, open ice, 472 s, 5 marked checks (1 big hit delivered +
+knockdown, 2 small hits delivered, 3 small hit delivered, 4 big hit delivered + knockdown, 5 big
+hit taken + knockdown). Each MARK was clicked 4.1-4.7 s after its check (time to open the menu).
+Owner noted a few small contacts were not marked.
+- **`sub_833E0BF8` (called from lr 0x83429644) = contact start.** Fired at all 5 marks and at 7
+  unmarked contacts, never without contact. r3 = player HIT, r4 = player HITTING: for marks 2, 3,
+  4 r4 was the same object (A9BFB8A0) and for mark 5 that object was r3, matching the notes.
+  r6 = 0x83ABF598 on all 3 marked knockdowns, 0x83ABF57C on both marked small hits (a constant
+  in the image: probably a reaction descriptor).
+- **`sub_8357F9A0` + `sub_83589B38` (one caller, lr 0x835A74D0 / 0x835A74AC), ~0.35 s after
+  contact:** r4 = hitter, r5 = victim, r7 = 0..3 (marks 2/3: 0 and 2; marks 4/5: 3). Did NOT
+  fire for mark 1 (a knockdown). HYPOTHESIS: hit stat credit / hit strength.
+- **`sub_829380A0` (lr 0x8292A904):** ran only on knockdowns (marks 1, 4, 5 + one unmarked at
+  255.7 s between the opponent and a third object AA315CE0). Fall path: best RE-3 lead.
+- `sub_8293A998` (lr 0x828B5520) runs with each contact; r5 = 0x0E with knockdowns, 0x11 with
+  normal hits. `sub_835888E8` (r4 = a player) ran at 3 of 4 knockdowns.
+- **Player objects (RE-2 lead):** user's skater = A9BFB8A0, opponent = A9577560 in this session.
+  Heap addresses; expect them to change per session. The per-skater update `sub_8342C628` saw
+  A9BFB8A0 and AA315CE0.
+- **Skating snapshot `sub_828CC300` (TUN-12): NOT per frame.** 29 bursts in 472 s, each ~236 calls
+  inside one second, each with a fresh struct (new r3), at the same seconds as `sub_8334F930` and
+  `sub_83582C90` (probably drill resets in training). Callers seen: lr 828F158C (sub_828F1550),
+  82921208 (sub_82920828), 8332AF60 (sub_8332AF40). HYPOTHESIS: live edits to snapshotted
+  skating/balance tunables apply only at the next rebuild; perks applied before a match should
+  work. Not tested.
+- Log size: 1.58 MB for 8 min (the sweep). Round 4 hooks 7 functions only.
+
+## Key finding 2026-10-29 (TUN-4/TUN-5b): record+8 is a type tag; N+32 is the live value
+
+The parent Engine Tunables editor / ITunableStore edits record+8, which is the tweak object's
+type tag (4 float, 2 int, 1 bool, 13 game-style table, 12 indexed slider), not its value. Game
+code reads N+32 (plus a heap copy at H+36); writing it changed slap shots and LOD rendering at
+once, and values above the object's own max work. Full layout and evidence: re-findings.md.
+Report to the parent project: PARENT-1.
 
 ## Task board
 
@@ -73,74 +134,76 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 | BUILD-4 | Move `rogue::Tick();` before the overlay visibility early-return | U | DONE 2026-10-28 (87a6b59) |
 | BUILD-5 | Restore CRLF on two parent scripts | U | DONE 2026-10-28 (87a6b59) |
 | BUILD-6 | `scripts/_ffx_dll_build.bat` generator `Visual Studio 18 2026` (34a34a3). Machine-specific; do not upstream. Portable fix = auto-detect the VS generator | A | TODO (low) |
-| PARENT-1 | Tell the parent project: its Engine Tunables editor / `ITunableStore` writes record+8 (the type tag) instead of the live value N+32 (+ heap copy H+36); its `gDekeRatEffect` sanity value comes from the registration pool. Evidence: re-findings.md. Owner decides how to report (issue / PR) | Owner (agent drafts) | TODO |
 | BUILD-7 | Build + verify the 2026-10-29 package (probe + BUG-1/2) | U | DONE 2026-10-29 (commit 316c3a1; probe ran) |
+| BUILD-8 | Build the 2026-10-30 hit watch package (incremental) | U | DONE 2026-10-30 (round 4 ran) |
+| BUILD-9 | Build the 2026-10-30 13:45 package (hit contact hook + round 5 hit watch, incremental) | U | DONE 2026-10-30 (round 5 ran) |
+| BUILD-10 | Build the 2026-10-30 17:45 package (claim + round 6, incremental) | U | DONE 2026-10-30 (round 6 ran) |
+| BUILD-11 | Build the 2026-10-30 18:45 checkpoint (first event perks + round 7), commit + push | U | TODO |
+| PARENT-1 | Tell the parent project: its Engine Tunables editor / `ITunableStore` writes record+8 (the type tag) instead of the live value N+32 (+ heap copy H+36); its `gDekeRatEffect` sanity value comes from the registration pool. Evidence: re-findings.md. Owner decides how to report (issue / PR) | Owner (agent drafts) | TODO |
 
 ### Bugs
 | ID | Bug | Status |
 |---|---|---|
-| BUG-1 | Perk Shop: every non-curse offer stayed FREE after the free pick was used, so all could be taken and `free` went negative (owner save showed `free=-1`). | FIXED in package 2026-10-29 (`Buy` refuses when no pick left, panel refreshes FREE flags after a buy, `Load` clamps `free` to >= 0). Verify in BUILD-7 |
-| BUG-2 | Legacy Rogue section (and Start career, which writes save files) showed without `NHL_ROGUE=1`. The overlay itself is parent-owned and must stay. | FIXED in package 2026-10-29 (`DrawPanel` returns when `rogue::Enabled()` is false). Verify in BUILD-7 |
+| BUG-1 | Perk Shop: every non-curse offer stayed FREE after the free pick was used (`free` went negative) | FIXED 2026-10-29 (316c3a1) |
+| BUG-2 | Legacy Rogue section showed without `NHL_ROGUE=1` | FIXED 2026-10-29 (316c3a1) |
 
 ### Tunable perks (no RE)
 | ID | Task | Who | Status |
 |---|---|---|---|
-| TUN-4 | Find where a tweak record's live value really is | U then A | DONE 2026-10-29: layout decoded (re-findings.md, OBSERVED) |
-| TUN-5 | Write test: `gSlapShotPowerMultiplier`, `gMomentumPhysicsImpulse`, `gHitTune_GlobalScale` at x0.2 / x3 / x10 of stock, both copies (user-guide 4b) | U | DONE 2026-10-29: writes landed (log), NO visible effect in a BAP match (live edit) or an exhibition (x10 set at the menu before the match). x0.2 slap power should have been obvious. Hits were hard to judge |
-| TUN-8 | Static scan of generated code for references to each tweak object / table (`tools/find_tweak_consumers.py`) | U then A | DONE 2026-10-29: real code loads base+40 = N+32 (not N+20); game-style values are read through the heap copy's table (sub_829F8A20). `gSlapShotPowerMultiplier` and `gMomentumPhysicsImpulse` have no static reader. See re-findings.md |
-| TUN-5b | Write test on the field real code reads (N+32 + heap copy H+36) | U | DONE 2026-10-29: **N+32 is the live value (CONFIRMED)**. `gSlapShotPowerScale` x0.2 = limp slap shots, x10 (its own max is 2.0) = very fast; `gLODShader` 0/2 changed rendering at once. Effects are immediate in a match. Game-style tables (all entries 0/20): no visible effect. `gHitTune_GlobalScale` x10: nothing seen (big hits hard to land) |
-| TUN-5c | Write test round 3 (slap x30, fall thresholds, hit power, check reach, charging penalty) | U | DONE 2026-10-29: slap x3 -> x30 differs less than the numbers (puck speed probably capped, extra power goes into lift); fall thresholds (stock 25/23, x10) and check distances: nothing undeniable; `gPenaltyChanceCharging` stock is 0; `gHitPowerForPhysicsRatingModifier` is a tag-12 slider (not supported) |
-| TUN-9 | Full catalog + static readers | U then A | DONE 2026-10-29: 10,583 tweak objects (tags: 8,009 float, 1,549 int, 484 slider, 396 tag-11, 145 game-style); 7,779 have a static reader of N+32. Hip-check code identified (re-findings.md) |
-| TUN-10 | Hip-check write test + combo | U | DONE 2026-10-29: inconclusive (hip checks are too hard to land to judge); the combo maybe made knockdowns a bit easier. Parked until a hook can force the interaction |
-| TUN-11 | Bool tweak objects (tag 1, ~1,100 e.g. gTriggerFalls) are missing from the TUN-9 catalog and TweakIndex: their layout differs (value byte at N+21; the heap-copy check fails). Extend the scan | A | TODO |
-| TUN-12 | Skating settings snapshot: sub_828CC300 copies ~890 tweak values into a ~3.4 KB struct (r3); skating code reads the COPY. Map: `docs/skating_params_struct.txt` (822 named, e.g. +636 gBalanceCarrierFallThreshold, +640 gBalanceOffpuckFallThreshold, +596..+648 gBalance_*). Find how often it runs (in the RE-1 sweep list) and the struct address (sweep call lines log r3). If rare: apply skating perks before the match or patch the struct directly | A+U | NEXT. Static leads 2026-10-29: 6 direct callers of sub_828CC300: sub_8332AF40 (file 125), sub_828F1550 (40), sub_82920828 (42), sub_82933A40 + sub_8293B9A8 (43), sub_8293BF80 (44). The r3 each passes = the struct's place inside its parent object; true offsets of the fall thresholds = that + 636 / 640. Run `slice_generated.py callsite sub_828CC300 --context 20`. Files 40-44 = locomotion / balance cluster (sub_8293A3E8 in file 43 reads gBalanceMax / gBalanceReaction*): upload file 43 for a static read |
-| TUN-6 | `TunablePatcher` writes the live value via the new `TweakIndex` (image scan; N+32 + H+36); perk_catalog / reactions rebuilt on tunables with static readers | A | DONE 2026-10-29 (needs `_game_ffx_build.bat`: new tweak_index.cpp). Owner to verify Cannon in play |
-| TUN-7 | (low; TUN-5b showed no effect, probably presets applied elsewhere) Game-style tables (tag 13): which entry is the active style, and what range a level has (seen: GameSpeed 5/4/3, SlapShotPower 5/4/4, WristShotAccuracy 6/5/3) | A+U | TODO |
 | TUN-1 | Stock values + ranges for perk tunables | A | DONE 2026-10-29 via TUN-9 (values in perk_catalog.cpp comments) |
-| TUN-2 | Do AI TEAMMATES read *Level or *LevelCPU in BAP? | U | BLOCKED (TUN-6) |
-| TUN-3 | Which tunables are rewritten every frame | U | PARTIAL: `gTweakByGameStyleGameSpeedLevel` record+8 is NOT rewritten (survives whistles). Redo per setting after TUN-4 |
+| TUN-2 | Do AI TEAMMATES read *Level or *LevelCPU in BAP? | U | TODO (low; game-style tables showed no effect) |
+| TUN-3 | Which tunables are rewritten every frame | U | PARTIAL: `gTweakByGameStyleGameSpeedLevel` record+8 is NOT rewritten. Superseded by TUN-12 for skating values |
+| TUN-4 | Find where a tweak record's live value really is | U then A | DONE 2026-10-29: layout decoded (re-findings.md) |
+| TUN-5 / 5b / 5c | Write tests | U | DONE 2026-10-29: N+32 is the live value (CONFIRMED). Slap x3 -> x30 differ less than the numbers (puck speed probably capped). Fall thresholds, check distances, hit power: nothing undeniable. `gPenaltyChanceCharging` stock 0. `gHitPowerForPhysicsRatingModifier` is a tag-12 slider (unsupported) |
+| TUN-6 | `TunablePatcher` writes the live value via `TweakIndex`; perk_catalog / reactions rebuilt on tunables with static readers | A | DONE 2026-10-29. Readout VERIFIED 2026-10-30 (wrist shot power stock -> perk -> stock) |
+| TUN-7 | (low) Game-style tables (tag 13): active style entry and level range | A+U | TODO |
+| TUN-8 | Static scan for readers of each tweak object | U then A | DONE 2026-10-29 |
+| TUN-9 | Full catalog + static readers | U then A | DONE 2026-10-29: 10,583 objects; 7,779 with a static reader of N+32 |
+| TUN-10 | Hip-check write test + combo | U | DONE 2026-10-29: inconclusive. Parked: the hip-check family never runs (RE-1) |
+| TUN-11 | Bool tweak objects (tag 1, ~1,100, e.g. gTriggerFalls) are missing from the TUN-9 catalog and TweakIndex (value byte at N+21; heap-copy check fails). Extend the scan | A | TODO |
+| TUN-12 | Skating settings snapshot `sub_828CC300` (~890 values into a ~3.4 KB struct; map `docs/skating_params_struct.txt`) | A+U | ACTIVE. 2026-10-30: NOT per frame (29 bursts in 8 min, fresh struct each time, probably at drill resets / player setup). Next: test a fall-threshold perk applied BEFORE the match starts (or before a drill reset); the round 4 log shows burst times. Callers: sub_8332AF40 (file 125), sub_828F1550 (40), sub_82920828 (42), sub_82933A40 + sub_8293B9A8 (43), sub_8293BF80 (44) |
 
 ### Reverse engineering (ledger: re-findings.md)
 | ID | Task | Who | Status |
 |---|---|---|---|
-| RE-0 | Run `tools/find_bap_code.py` on the decompressed image with `--generated generated/default`, upload report. Owner may need to produce the image first (user-guide section 4) | U | TODO |
-| RE-1 | Check resolution (hitter/hittee). Rounds 1-2 (2026-10-29): hip-check family and all 15 player-event handlers NEVER run (exhibition and BAP); hook method verified (function table registers `sub_X`). Round 3: sweep of 141 functions that read hit/check/balance/fall/collision tunables | A+U | ACTIVE (owner run) |
-| RE-2 | Identify the BAP-controlled skater | A+U | TODO |
-| RE-3 | Knockdown: fall entry point or skater balance offset | A+U | TODO |
+| RE-0 | Run `tools/find_bap_code.py` on the decompressed image, upload report | U | TODO (low; the sweep approach works better) |
+| RE-1 | Check resolution (hitter/hittee) | A+U | DONE 2026-10-30 for detection: hit contact `sub_833E0BF8` (r3 victim, r4 hitter) + knockdown reaction 0x83ABF598 CONFIRMED (rounds 3-4), in addresses.h. Changing hit outcomes needs the decision point: RE-3 / CHECK_RESOLVE (`sub_83429560`) |
+| RE-2 | Identify the BAP-controlled skater | A+U | ACTIVE. Interim claim works (round 6). Candidate +0x22C byte (0x00 pro / 0xFF others, one session). Round 7: AUTO tag + agreement counters in exhibition (should follow the player you control) and BAP (should always be your pro). Two clean sessions -> CONFIRMED -> claim becomes automatic |
+| RE-3 | Knockdown: fall entry point or skater balance offset | A+U | DONE 2026-10-30 for hit outcomes: power -> reaction table (CONFIRMED), Freight Train / Wrecking Ball built on it. A force-fall for non-contact effects (Shockwave on nearby players, crit slap) is still open: lead `sub_83429560` called for another victim |
 | RE-4 | Puck-vs-skater contact | A+U | TODO |
-| RE-5 | BAP game start / end + final score + BAP player's stat line | A+U | TODO: the PE_* handlers never run, so not usable. Next lead: post-game screens / XP award code |
-| RE-6 | BAP stat-event stream. Lead: `gBeAPro_*_StatEvent` tunables | A+U | TODO |
+| RE-5 | BAP game start / end + final score + BAP player's stat line | A+U | TODO: the PE_* handlers never run. Next lead: post-game screens / XP award code |
+| RE-6 | BAP stat-event stream. Lead: `gBeAPro_*_StatEvent` tunables; hit credit pair `sub_83589B38` + `sub_8357F9A0` (from `sub_8358A1D0` / `sub_835A7078`) may be the hit stat | A+U | TODO |
 | RE-7 | BAP career save identity | A+U | TODO |
 | RE-8 | BAP progression storage (lead: `BAP_PLAYER_GROWTH` @ 0x82035818) | A+U | TODO |
 | RE-9 | Meta reactions: contracts, trades, line promotion, task grading | A+U | TODO |
-| RE-10 | Penalty call decision (for a "no checking penalties" perk): find where an infraction becomes a called penalty and its offender register | A+U | TODO |
-| RE-11 | BAP player's live ratings in memory (for perks that push attributes past 99) | A+U | TODO |
+| RE-10 | Penalty call decision (for a "no checking penalties" perk). Lead: `sub_83310E68` (reads gHandlePotentialKnockedOverPenaltiesTime) ran twice in round 3 with r3=0x0D | A+U | TODO |
+| RE-11 | BAP player's live ratings in memory (for perks past 99). Round 4 player-object dumps may help | A+U | TODO |
 
 ### Feedback effects
 | ID | Task | Who | Status |
 |---|---|---|---|
-| FX-1 | Per-frame FX draw with the overlay closed | U | DONE 2026-10-29 (BUILD-3 check 2: flash + text stay with the menu closed) |
+| FX-1 | Per-frame FX draw with the overlay closed | U | DONE 2026-10-29 |
 | FX-2 | Placeholder WAVs in `<exe>/rogue/sfx/` | U | TODO |
 | FX-3 | Replace PlaySoundW with XAudio2 or SDK audio | A | TODO |
 | FX-4 | In-game effects via guest calls (crowd, horn, camera shake, replay) | A+U after RE-1..4 | TODO |
-| FX-5 | Hit-stop experiment via game-speed tunable | U | BLOCKED (TUN-4) |
+| FX-5 | Hit-stop experiment via game-speed tunable | U | TODO (unblocked by TUN-5b; game-style tables showed no effect, needs another speed tunable) |
 
 ### Design
 | ID | Task | Who | Status |
 |---|---|---|---|
 | DES-1 | Pick the win/loss structure (design.md section 6) | Owner | TODO |
-| DES-2 | Balance pass: Hype income vs prices over an 82-game season. Note: `gBeAPro_LineEnergyBoost` / `gBeAPro_LineSkillBoost` read 4 in the store and Iron Lungs adds 10 (3.5x), but both readings are suspect until TUN-4 | A after TUN-4 | TODO |
+| DES-2 | Balance pass: Hype income vs prices over an 82-game season | A | TODO |
+| DES-3 | Perk system shape (owner 2026-10-30): maybe no stacking, perks much more expensive but much more powerful; risks: nothing left to buy too soon, a run that is overpowered and no longer fun later, and an early run that is just standard NHL. Owner wants something special from game 1. Agent to propose options (e.g. a strong starting "archetype" perk, perks that evolve or have drawbacks, Notoriety-scaled opposition, Hype sinks such as rerolls / temporary boosts / Legacy) in design.md | Owner + A | TODO |
 
 ## Recommended next action
 
-1. Owner: user-guide 4b (perk readout + hit sweep run), upload `rogue_probe.txt` + numbered marks.
-2. Agent: analyse the sweep: per-function spikes at landed checks (RE-1) and the call rate +
-   r3 of sub_828CC300 (TUN-12: is the skating snapshot taken per frame or rarely?).
-3. Static, cheap, can run in parallel: `slice_generated.py callsite sub_828CC300 --context 20`
-   (where the snapshot struct lives) and file 43 as .txt (balance reaction code). Goal: the
-   skater balance field and the fall entry point (RE-3) -> shockwave / Wrecking Ball.
-4. Fallback if static reading stalls: page-protection read trap on the struct's +640 address
-   (technique already in parent `src/diag_hooks.cpp`, VP6 trap) to name the reading function.
+1. Owner: BUILD-11 (unzip, incremental build, commit with the message from the session, push).
+2. Owner: user-guide 4e: exhibition (does AUTO follow the controlled player?), then a BAP game
+   with Freight Train (claim, play, compare AUTO with ME). Upload `rogue_probe.txt` + notes.
+3. Agent: RE-2 decision from the AUTO counters (auto claim if clean), then DES-3 options in
+   design.md, then refresh 00-START-HERE.md (mechanisms now include confirmed hooks).
+4. Next RE for more perks: puck-vs-body (RE-4, crit slap), a force-fall entry (Shockwave), BAP
+   game start / end (RE-5) so the Manual buttons can go.
 
 ## How to verify the branch state without the owner
 
@@ -149,3 +212,5 @@ read files from it, and compare blob SHAs against `puckhead73/nhl-legacy-recomp`
 accidental edits to parent files. Expected parent-file differences from upstream: root
 `CMakeLists.txt` (add_subdirectory), `src/nhllegacy_app.h`, `renderer/core/nhl_overlay.cpp`,
 `.gitignore` (run_dev.bat), `scripts/_ffx_dll_build.bat` (VS 2026). Anything else is suspect.
+Raw file text: `https://raw.githubusercontent.com/MegaSloppa/nhl-legacy-recomp/<commit>/<path>`
+(the GitHub file tool may return only the SHA).

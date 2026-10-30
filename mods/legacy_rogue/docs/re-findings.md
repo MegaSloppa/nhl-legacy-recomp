@@ -10,12 +10,81 @@ CONFIRMED (behavior reproduced: e.g. forcing it changes the game as predicted, 2
 
 | Key (addresses.h) | Address / offset | Confidence | Evidence | Date / agent |
 |---|---|---|---|---|
-| ROGUE_ADDR_CHECK_RESOLVE | ? | - | - | - |
-| ROGUE_VA_BAP_PLAYER_PTR / ROGUE_OFF_SKATER_CONTROLLER | ? | - | - | - |
-| ROGUE_ADDR_FORCE_FALL / ROGUE_OFF_SKATER_BALANCE | ? | - | - | - |
+| ROGUE_ADDR_HIT_CONTACT | sub_833E0BF8 (file 131); only caller sub_83429560 (file 134, call at lr 0x83429644). r3 = player reacting (victim), r4 = player hitting, r5 -> float (power?), r7 -> u32, r8 -> float out | CONFIRMED (detection) | Round 3: fired at all 5 marked checks + 7 unmarked, order matched owner notes. Round 4: 59 calls over 39 interactions, owner checked hitter -> victim on screen. One call per reacting player (1-3 per collision) | 2026-10-30 Hannah |
+| ROGUE_VA_REACT_KNOCKDOWN | 0x83ABF598 = r6 of the hit contact on a knockdown reaction (normal hit 0x83ABF57C). Set by the caller (its r30); sub_833E0BF8 never reads r6 | CONFIRMED | Round 3: 3/3 knockdowns, 2/2 small hits. Round 4: 15 knockdown lines, owner: labels consistent. Goalies get it and do not fall | 2026-10-30 Hannah |
+| ROGUE_VA_SKATER_CLASS | first word of a player object: skater 0x82271C10, goalie 0x8223F648 (roster slots 18-19 / 38-39) | CONFIRMED | Round 4 dumps (32 + 2), round 5 player table in exhibition and BAP (every slot 18/19/38/39 is a goalie class, all others skater); goalie took a knockdown reaction without falling | 2026-10-30 Hannah |
+| ROGUE_OFF_SKATER_CONTROLLER | ? byte +0x38 REJECTED: it is a reaction / animation state (2..12 on victims after a reaction, 0 on hitters) | REJECTED | Round 5: never 2 on the owner's player; the two "YOU" knockdowns in BAP were other players. Interim: the owner claims his pro in the panel (rogue::SetBapPlayer); round 6 dumps all players at the claim | 2026-10-30 Hannah |
+| (candidate) BAP marker | byte +0x22C of the player object: 0x00 on the claimed player, 0xFF on all 20 others dumped (also unique to him: +0x040 = 1, +0x248 heap pointer vs 0x83B44474, +0x3D0 = 1) | CANDIDATE | round 6 claim dumps, one BAP session (21 players). Round 7 tests it live (AUTO tag vs claim) | 2026-10-30 Hannah |
+| (offset) player index | byte +0x39 (57) of the player object: 0-19 / 20-39 by team; also at +0xAC | OBSERVED | sub_833E0BF8 passes it as an index (static); dumps show 0..0x27, goalie = 0x13 / 0x27; byte +0x30 = team side 0/1 | 2026-10-30 Hannah |
+| (data) team query | sub_834EA6D0(player, 0) -> 0 / 1 by TEAM (not human): exhibition idx 0-19 -> 0, 20-39 -> 1; BAP idx 0-19 -> 1, 20-39 -> 0 | OBSERVED | Round 5 result log, 2 sessions | 2026-10-30 Hannah |
+| ROGUE_ADDR_REACTION_DISPATCH | sub_83429560(r3 victim, r4 hitter): power = sub_833CA500(victim, hitter, ...); desc = sub_833B9028(f1 = power); state = sub_83429248(victim, desc+20) | CONFIRMED | static (reaction_slice.txt) + round 6 (1836 dispatches logged, all with lr 0x834295E0) | 2026-10-30 Hannah |
+| ROGUE_ADDR_REACTION_CHOICE | sub_833B9028(f1 = power) -> reaction descriptor: first table entry whose threshold (+4) >= power, else entry 4 | CONFIRMED | static (power_slices.txt) + round 6: all 1836 decisions match; raising f1 for the claimed player's hits gave hit -> knockdown and bump -> hit exactly as the thresholds predict | 2026-10-30 Hannah |
+| ROGUE_VA_REACTION_TABLE | 0x83ABF528: 5 entries x 28 bytes. Entry 0 0x83ABF528 (power <= ~0.5: no hit reaction, contact not called), entries 1-2 never chosen (same threshold?), entry 3 0x83ABF57C (<= ~0.75: hit), entry 4 0x83ABF598 (above: knockdown) | CONFIRMED | round 6: entry 0 max 0.498, entry 3 0.500-0.750, entry 4 min 0.767 | 2026-10-30 Hannah |
+| ROGUE_VA_BAP_PLAYER_PTR | ? | - | - | - |
+| ROGUE_ADDR_FORCE_FALL / ROGUE_OFF_SKATER_BALANCE | ? (lead: sub_829380A0 runs only on real falls, r3 = 0xBEA19BE0 always, r6/r7 = per-fall body objects) | - | - | - |
 | ROGUE_ADDR_PUCK_BODY_HIT | ? | - | - | - |
 | ROGUE_ADDR_BAP_GAME_START / END | ? | - | - | - |
 | (layout, no address) Tweak object value | name-pointer address N: tag N+8, N+20 (reset value?), min N+24, max N+28, LIVE VALUE N+32 (CONFIRMED TUN-5b), heap copy ptr N+36 (copy: tag +0, name +4, value +24) | CONFIRMED (value N+32) | TUN-4 layout; TUN-8 readers load N+32; TUN-5b: writing N+32 + H+36 changes slap shot power and LOD immediately | 2026-10-29 Victoria |
+
+## Hit contact sub_833E0BF8 (static read, hit_slices.txt, 2026-10-30)
+
+- Saves r3 (victim) in r29, r4 (hitter) in r31, r5 (float*) in r27, r7 in r25, r8 (float*) in r26.
+  r6 is never read. Returns at once when r4 == 0.
+- r28 = *( *(0x83C1D218) + 4 * (28 or 29) ), index 28 when sub_834EA6D0(hitter, 0) returns
+  nonzero, else 29. HYPOTHESIS: a human vs CPU choice.
+- If the bool tweak byte at 0x83C78D05 is set (and the byte at 0x83C7CC54 is clear, or
+  sub_833BCA38(victim, hitter) returns nonzero) and *r5 < the float tweak at N = 0x83C73E08
+  (N+32; TUN-9 says this function reads gGPFallMin), then *r8 = constant float at 0x82014BEC.
+- Then three calls on per-player sub-objects at +564 with player index bytes (+57):
+  sub_833DE980(victim+564, hitter idx, f1 = *r5, 30); sub_833DEA28(hitter+564, victim idx,
+  f1 = *r8, *r7, game-style table entry r28 of the object at N = 0x83C74CC8 (heap table));
+  sub_833DBE68(victim+564, victim idx, hitter idx, 300). HYPOTHESIS: per-player "who hit whom"
+  memory (intimidation / AI awareness), durations 30 and 300 (frames?).
+- Consequence: this is bookkeeping AFTER the hit is decided. Good for detection, not the place to
+  change hit power. The reaction (knockdown or not) is chosen upstream in sub_83429560.
+- Hit credit: sub_83589B38 then sub_8357F9A0 are called back to back from sub_8358A1D0 (file 146)
+  and sub_835A7078 (file 147).
+
+## Reaction dispatcher sub_83429560 (static read, reaction_slice.txt, 2026-10-30)
+
+- r3 = victim (r31), r4 = hitter (r28), r5, r6 saved. Returns 0 at once unless
+  sub_8341D8C8(victim) (and sub_8341D8C8(hitter) if hitter != 0) return nonzero.
+- power: sub_833CA500(victim, hitter, &byte81, &byte80, &float88) returns f1, stored at r1+84
+  (this is the hit contact's *r5). sub_833CA500 reads gBoardsCheckingEffectiveRating,
+  gGPStumbleMin, gGlobalBalanceScale (TUN-9) and runs more often than contacts (AI estimates?).
+- reaction: desc = sub_833B9028(f1 = power) -> descriptor pointer (0x83ABF57C normal, 0x83ABF598
+  knockdown; 28 bytes apart). desc+8 / +12 floats, desc+20 a reaction id.
+- state = sub_83429248(victim, desc+20). If state != 19: unless sub_8350C728(victim, state),
+  sub_83429300(victim, state) applies it. Then the hit contact sub_833E0BF8(victim, hitter,
+  &power, desc, r5, r6), sub_833FBEA0(victim, byte81, byte80, float88), and
+  sub_8332D4D0(*(victim+80), 316, desc+8) / (314, desc+12). Else sub_833DBC50. Returns 1.
+- Consequence (HYPOTHESIS): a knockdown is chosen from power alone in sub_833B9028; raising the
+  power it sees for the BAP player's hits should turn hits into knockdowns (round 6 test).
+
+## Reaction choice sub_833B9028 (static read, power_slices.txt, 2026-10-30)
+
+```
+r10 = 0x83ABF528 (table); r11 = r10 + 4; i = 0
+loop: if f1 <= *(float*)r11 -> return r10 + 28 * i
+      r11 += 28; i += 1; while r11 < r10 + 116
+return r10 + 112   (entry 4)
+```
+A perk that raises f1 for the BAP player's hits turns them into knockdowns; lowering the
+threshold floats in the table would change everyone's hits (global).
+
+## Player object (round 4 dumps, 34 objects, 2026-10-30)
+
+| Offset | Meaning | Confidence |
+|---|---|---|
+| +0x00 | class pointer: skater 0x82271C10, goalie 0x8223F648 | OBSERVED |
+| +0x04 | self pointer | OBSERVED |
+| +0x30 | byte: team side 0 / 1 | OBSERVED |
+| +0x38 | byte: reaction / animation state (2..12 right after a reaction), NOT a human flag | REJECTED round 5 |
+| +0x39 | byte: player index 0-39 (also +0xAC) | OBSERVED |
+| +0x60 | pointer to another object (a player in exhibition, a shared object in training) | - |
+| +0x22C | byte: 0x00 on the claimed BAP player, 0xFF on 20 others (round 6) | CANDIDATE |
+| +0x248 | pointer: heap object on the claimed player, 0x83B44474 on 19 of 20 others | CANDIDATE |
+| +564 (0x234) | per-player sub-object the hit contact updates | static |
 
 ## Tweak object layout (TUN-4, 2026-10-29)
 
@@ -91,10 +160,59 @@ extern "C" REX_FUNC(sub_82XXXXXX) {
 ```
 Ask the user to do a scripted action sequence (e.g. "3 big hits, then nothing for 10 s") and
 note wall-clock times, so firing counts can be correlated with events.
+A strong override catches direct AND indirect calls (the function table registers `sub_X`).
+Only ONE translation unit may override a given function: the hit contact lives in
+`rogue_hooks.cpp` and forwards to the probe.
 
 ## Results log
 
 (append newest first: date, agent, what was probed, what fired, conclusion)
+
+- 2026-10-30, Hannah: round 6 (owner, 2 periods of a BAP game, 576 KB). Claim worked. Mod counted
+  27 hits / 13 knockdowns for the pro (25 of 28 of his contacts boosted by the test); the game's
+  hit stat said 5 (owner: probably only hits on the puck carrier); the credit pair ran 19 times for
+  him (strength r7: 3 x9, 2 x7, 0 x3). Power test outcomes for his hits (raw -> boosted class):
+  off 6 unchanged; x1.15 2 hit->KD, 2 bump->hit; x1.3 5 hit->KD, 4 bump->hit; x2 4 hit->KD,
+  5 bump->KD, 11 bump->hit. All 1836 reaction choices match the table thresholds. Nothing
+  abnormal (no flying, no freezes). Conclusion: reaction dispatcher / choice / table CONFIRMED;
+  +0x22C candidate BAP marker from the claim dumps.
+
+- 2026-10-30, Hannah: STATIC read of sub_83429560 (owner's reaction_slice.txt): see "Reaction
+  dispatcher" above. The reaction is chosen by sub_833B9028 from the power of sub_833CA500.
+
+- 2026-10-30, Hannah: RE-1 / RE-2 round 5 (owner, partial exhibition + partial BAP, 47 / 54 KB
+  logs, 29 contacts each). No YOU line ever matched the owner's player; two BAP knockdowns were
+  tagged YOU on other players (victims). Byte +0x38 read after the reaction: hitters always 0,
+  victims 0 / 1-12. REJECTED as a human flag. sub_834EA6D0(player, 0): 0 / 1 by team, every
+  player (40 per game); not a human query. Power (*r5), 58 contacts: all 17 knockdowns 0.763-0.962,
+  all 41 normal hits 0.501-0.734. Clean split: the knockdown threshold is between 0.734 and
+  0.763.
+
+- 2026-10-30, Hannah: STATIC read of sub_833E0BF8 + call sites (owner's hit_slices.txt). See the
+  section "Hit contact sub_833E0BF8" above. Only caller sub_83429560 (file 134); r6 is the
+  caller's r30 and is not read by the callee; *r5 is compared against gGPFallMin; player byte +57
+  is a player index; sub_834EA6D0(hitter, 0) selects a human/CPU table entry (CANDIDATE human
+  query). Hit credit pair sub_83589B38 + sub_8357F9A0 called from sub_8358A1D0 / sub_835A7078.
+
+- 2026-10-30, Hannah: RE-1 round 4 (hit watch: 7 hooks, on-screen labels), owner exhibition +
+  training (goalie hits), ~16 min, 157 KB log. 59 contacts in 39 interactions, all from lr
+  0x83429644; r6 0x83ABF598 x15, 0x83ABF57C x44. Owner: hitter -> victim always right, knockdowns
+  consistently labelled. 1-3 lines per collision = one line per reacting player (two-way hits,
+  both knocked down). Goalie: knockdown reaction at 927 s with no fall code (goalie unaffected);
+  owner's falls at 935 s / 962 s ran sub_829380A0 (12 and 18 calls). sub_8357F9A0 r7 = the hitter
+  object (2 sessions), so it is not a strength; round 3's 0..3 came from sub_83589B38 r7. Credit
+  ran for 27 of 39 interactions, 60-80 ms after knockdown contacts, 330-375 ms after normal hits.
+  Player dumps: see the Player object table. Conclusion: hit contact and knockdown reaction
+  CONFIRMED; skater class OBSERVED; +0x38 human flag CANDIDATE. The reaction-pointer dump did not
+  appear in the log (cause unknown; static read answered the question instead).
+
+- 2026-10-30, Hannah: RE-1 round 3 sweep (141 hooks), owner training 1-on-1, 472 s, 5 marked
+  open-ice checks (marks 4.1-4.7 s after each check). Fired only around contacts: sub_833E0BF8
+  (all 5 marks + 7 unmarked; r3 victim, r4 hitter), sub_8357F9A0 / sub_83589B38 (~0.35 s later;
+  missed mark 1), sub_829380A0 (knockdowns only: marks 1, 4, 5 + one unmarked), sub_8293A998
+  (r5 0x0E knockdown / 0x11 normal), sub_835888E8, sub_8359FAF0, sub_835A47D0. sub_828CC300
+  (skating snapshot): 29 bursts of ~236 calls, fresh r3 each time, callers lr 828F158C /
+  82921208 / 8332AF60; not per frame. User skater A9BFB8A0, opponent A9577560 (that session).
 
 - 2026-10-29, Victoria: STATIC search for readers of snapshot +636 / +640. sub_830E65F8 (file 107)
   is NOT balance code (constant table 0x83C0CBC0, size-320 guard, 40-step complex multiply-add

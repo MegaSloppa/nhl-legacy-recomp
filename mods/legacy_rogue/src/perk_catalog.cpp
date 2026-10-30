@@ -1,9 +1,10 @@
 // Perk catalog, rebuilt 2026-10-29 on tunables that game code is proven or likely to read.
 // Sources: TUN-9 catalog (live value at N+32, stock values below) and tweak_readers (static
 // readers of N+32). Each mod is applied PER STACK.
-// IMPORTANT: every tunable here is GLOBAL (CPU players get it too) until per-player hooks
-// exist (RE-1). Scope says so honestly. Only gSlapShotPowerScale is CONFIRMED in play (TUN-5b);
-// the rest have a static reader but their in-game effect is UNVERIFIED (TUN-10).
+// IMPORTANT: every TUNABLE perk here is GLOBAL (CPU players get it too). Only gSlapShotPowerScale
+// is CONFIRMED in play (TUN-5b); the rest have a static reader but their in-game effect is
+// UNVERIFIED. Event perks (Freight Train, Wrecking Ball since 2026-10-30) act on the BAP player's
+// hits only, through the reaction choice hook (rogue_hooks.cpp), once the pro is claimed.
 #include "rogue/perks.h"
 #include <cstring>
 
@@ -20,11 +21,11 @@ static const std::vector<PerkDef> kPerks = {
                        {"gRedirectShotAccuracyMultiplier", ModOp::kMul, 1.2f}}, {}},  // stock 1.0
   {"crit_slap", "Critical Slapshot", "Slap shots that hit a skater can floor them.",
    Rarity::kEpic, Scope::kBapScoped, 3, {}, {{EventKind::kCritSlapKnockdown, 0.25f, 0.f}}},
-  // Hitting
-  {"freight", "Freight Train", "Checks hit much harder.", Rarity::kRare, Scope::kGlobal, 3,
-   {{"gHitTune_GlobalScale", ModOp::kMul, 1.5f},                              // stock 1.0
-    {"gHitPowerForPhysicsGlobalModifier", ModOp::kMul, 1.6f}}, {}},           // stock 0.5
-  {"wrecking_ball", "Wrecking Ball", "Your checks always floor the target.",
+  // Hitting (event perks: your hits only, LIVE 2026-10-30). Round 6 power test: x1.15 turned 2 of
+  // 10 hits into knockdowns, x1.3 5 of 6 normal hits; knockdown above power 0.75, hit above 0.5.
+  {"freight", "Freight Train", "Your checks hit 15% harder per stack.", Rarity::kRare,
+   Scope::kBapScoped, 3, {}, {{EventKind::kHitPowerBoost, 0.15f, 0.f}}},
+  {"wrecking_ball", "Wrecking Ball", "Every check you land floors the target.",
    Rarity::kLegendary, Scope::kBapScoped, 1,
    {}, {{EventKind::kCheckAlwaysFloors, 1.0f, 0.f}}},
   {"shockwave", "Shockwave", "Big hits knock down nearby opponents.", Rarity::kLegendary,

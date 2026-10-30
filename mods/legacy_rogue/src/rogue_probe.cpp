@@ -45,6 +45,8 @@
 #include <rex/system/xmemory.h>
 
 #include "rogue/probe.h"
+#include "rogue/fx.h"
+#include "rogue/rogue_mod.h"
 
 namespace rogue::probe {
 namespace {
@@ -483,166 +485,71 @@ void CatalogAsync() {
   std::thread([] { CatalogWorker(); }).detach();
 }
 
-// ---------------------------------------------------------------- RE-1 sweep (round 3)
-// Rounds 1-2 (2026-10-29): the hip-check family (sub_83411E90 ...) and all 15 player-event
-// handlers (gEvtValPE_*, file 44) NEVER fired, in an exhibition and in a BAP game. The hook
-// method itself is fine: hook_refs.txt shows the function table registers `sub_X`, so direct
-// AND indirect calls reach the override (sub_83411E90 has 3 direct callers and still never ran).
-// Round 3 hooks EVERY function (141) that statically reads a hit / check / balance / fall /
-// collision tunable (TUN-9 readers, filtered; list + reasons in docs/re-findings.md). The log
-// has one line per second with the per-function call deltas (only non-zero ones, by address),
-// plus up to 2 call lines per second for functions that are NOT per-frame (< 30 calls in the
-// previous second). Hit code = functions whose counts jump at the owner's marked hits.
+// ---------------------------------------------------------------- RE-1 hit watch (round 7)
+// Round 6 RESULT (owner BAP game, 2026-10-30): the claim works; the power test is deterministic:
+// sub_833B9028 walks a 5-entry table at 0x83ABF528 (28 bytes each, threshold float at +4) and
+// returns the first entry whose threshold >= power: <= 0.5 entry 0 (0x83ABF528, no hit
+// reaction), <= 0.75 entry 3 (0x83ABF57C, hit), above entry 4 (0x83ABF598, knockdown). All 1836
+// logged decisions match. The dispatcher and choice hooks moved to rogue_hooks.cpp (perks use
+// them) and call ReactionBegin / ReactionPowerIn / ReactionChosen / ReactionEnd here.
+// Round 7 tests an automatic BAP-player marker: byte +0x22C of the player object was 0x00 on the
+// claimed player and 0xFF on all 20 others (one session); also logged: +0x040, +0x248, +0x3D0.
+// CONFIRMED (rounds 3-5): sub_833E0BF8 = hit contact (hooked in rogue_hooks.cpp, forwards to
+// ContactSeen), knockdown reaction 0x83ABF598, skater / goalie class pointers.
+// Round 5 RESULT (owner, 2026-10-30, exhibition + BAP): byte +0x38 is NOT a human flag. Read after
+// the reaction it takes 2..12 on victims (a reaction / animation state), 0 on hitters; the two
+// "YOU" knockdowns in BAP were other players. sub_834EA6D0(player, 0) is a TEAM query: 0 for one
+// team, 1 for the other (exhibition idx 0-19 -> 0, 20-39 -> 1; BAP idx 0-19 -> 1, 20-39 -> 0).
+// Static read of sub_83429560 (reaction_slice.txt), the only caller of the hit contact:
+//   power = sub_833CA500(victim, hitter, ...)   (stored at r1+84 = the hit contact's *r5)
+//   desc  = sub_833B9028(f1 = power)            (reaction descriptor: 0x83ABF57C / 0x83ABF598)
+//   state = sub_83429248(victim, desc+20); != 19 -> sub_8350C728 / sub_83429300 apply it
+//   then sub_833E0BF8 (bookkeeping), sub_833FBEA0, sub_8332D4D0(victim+80, 316 / 314, desc+8/+12)
+// Round 5 power (58 contacts): knockdowns 0.763-0.962, normal 0.501-0.734 (threshold ~0.75).
+// Round 6 (kept): the owner CLAIMS his player once per game (panel: "That was me"), the hit watch tags it
+// ME, the claim dumps every player object once (to find a field that marks the human player), and
+// an optional TEST multiplies the power the reaction choice sees, for the claimed player's hits
+// only (proof that perks can force knockdowns). Pass-through unless the test is switched on.
 namespace {
-const char* const kHooks[] = {
-  "828B9258",
-  "828CC300",
-  "828FEBD8",
-  "82929FB0",
-  "8292AE50",
-  "8292B550",
-  "8292B808",
-  "82936F28",
-  "829380A0",
-  "8293A148",
-  "8293A3E8",
-  "8293A998",
-  "8293AB78",
-  "82A3B770",
-  "82DBEFB0",
-  "82DBF2A0",
-  "83310E68",
-  "8331B8F0",
-  "83328180",
-  "83339558",
-  "8333F9C0",
-  "833442E8",
-  "8334F930",
-  "833A1F40",
-  "833B90E0",
-  "833B9730",
-  "833B9AE8",
-  "833BF998",
-  "833C09E8",
-  "833CA500",
-  "833E0BF8",
-  "833E3D58",
-  "833EBD80",
-  "833F27E8",
-  "833F3330",
-  "833F8AC8",
-  "8340C690",
-  "8340C7E0",
-  "8340DB90",
-  "83411AD0",
-  "83412298",
-  "83427068",
-  "83429800",
-  "834299F0",
-  "83429EC8",
-  "8342A2A8",
-  "8342A938",
-  "8342B290",
-  "8342B8C8",
-  "8342C628",
-  "8342CDD0",
-  "83437DF8",
-  "834551C8",
-  "834553D8",
-  "83459350",
-  "83465C48",
-  "83467988",
-  "8346E460",
-  "83470DF8",
-  "83470E48",
-  "83476288",
-  "834859E0",
-  "834BF428",
-  "834D8580",
-  "834E9FA8",
-  "834F0A48",
-  "834F24E0",
-  "835038B8",
-  "83505630",
-  "8350E600",
-  "8351AE18",
-  "8351B5A0",
-  "8351B6D0",
-  "83522198",
-  "83524F60",
-  "835334A0",
-  "83552AB8",
-  "8357F748",
-  "8357F9A0",
-  "8357FAC0",
-  "83580BF8",
-  "83580CE8",
-  "83580E90",
-  "83581208",
-  "83582C90",
-  "835831D0",
-  "835834E0",
-  "835844B0",
-  "83585028",
-  "835853A8",
-  "835888E8",
-  "83588BF8",
-  "83588ED8",
-  "83589190",
-  "83589570",
-  "83589B38",
-  "8358A348",
-  "8358D100",
-  "8358D310",
-  "8358D478",
-  "8358DBD0",
-  "8358DFC0",
-  "8358EB88",
-  "8358EE30",
-  "83593FC8",
-  "83594968",
-  "83594BD0",
-  "83594CB8",
-  "83595320",
-  "83596B38",
-  "83597360",
-  "83597FF0",
-  "83599B68",
-  "8359A1D0",
-  "8359B378",
-  "8359B600",
-  "8359B7C8",
-  "8359BA08",
-  "8359BF10",
-  "8359C3F8",
-  "8359C700",
-  "8359FAF0",
-  "8359FE68",
-  "835A06E8",
-  "835A1640",
-  "835A18C0",
-  "835A2338",
-  "835A3618",
-  "835A4258",
-  "835A47D0",
-  "835A4BE0",
-  "835A5F10",
-  "835A62E8",
-  "835A6CE0",
-  "835A7078",
-  "835A8690",
-  "835A98D0",
-  "835BD388",
-  "835CF688",
-  "835E7990",
-  "835EB920"};
+const char* const kHooks[] = {"8357F9A0", "83589B38", "829380A0", "834EA6D0", "828CC300",
+                              "833E0BF8", "833B9028"};
+enum : int { kCredit = 0, kStrength, kFall, kTeamQ, kSnapshot, kContact, kReaction };
 constexpr int kNumHooks = int(sizeof(kHooks) / sizeof(kHooks[0]));
+constexpr uint32_t kReactKnockdown = 0x83ABF598u;  // CONFIRMED rounds 3-5
+constexpr uint32_t kReactNormal = 0x83ABF57Cu;     // CONFIRMED rounds 3-5
+constexpr uint32_t kClassSkater = 0x82271C10u;     // CONFIRMED rounds 4-5
+constexpr uint32_t kClassGoalie = 0x8223F648u;     // CONFIRMED rounds 4-5
+constexpr uint32_t kOffIndex = 0x39;               // player index byte (sub_833E0BF8 reads +57)
+constexpr uint32_t kOffTeam = 0x30;                // team side byte (round 4 dumps)
+constexpr uint32_t kOffAuto = 0x22C;               // CANDIDATE: byte 0x00 = BAP / human player, 0xFF = AI
+constexpr unsigned long kLinkMs = 1500;            // strength / credit / fall within this
+constexpr unsigned long kSameHitMs = 500;          // same victim again = same hit
+constexpr int kMaxEvents = 12;
+constexpr int kLinesPerSec = 40;
+constexpr int kMaxPlayers = 64;
+constexpr int kDumpBytes = 1024;
+
 std::atomic<unsigned> g_hook_calls[kNumHooks];
-std::atomic<unsigned> g_hook_prev[kNumHooks];   // calls in the previous second
-std::atomic<unsigned> g_hook_sec[kNumHooks];
-std::atomic<int> g_hook_sec_n[kNumHooks];
 std::atomic<bool> g_flusher{false};
-std::mutex g_hook_mu;
+std::atomic<float> g_boost{1.f};  // power test factor for the claimed player's hits
+std::mutex g_hook_mu;  // log file
+std::mutex g_ev_mu;    // events, ME counts, line budget
+std::mutex g_pl_mu;    // player table (from the team query)
+unsigned g_line_sec[kNumHooks] = {};
+int g_line_n[kNumHooks] = {};
+HitEvent g_ev[kMaxEvents];
+int g_ev_head = 0, g_ev_count = 0;
+YouStats g_you;
+uint32_t g_you_last_victim = 0;
+unsigned long g_you_last_tick = 0;
+struct PlayerEntry { uint32_t player; uint32_t team_q; };
+PlayerEntry g_pl[kMaxPlayers];
+int g_pl_n = 0;
+// Set while sub_83429560 (reaction dispatcher) runs on this thread.
+thread_local bool t_in_reaction = false;
+thread_local uint32_t t_hitter = 0, t_victim = 0;
+thread_local bool t_boosted = false;
+thread_local uint32_t t_desc = 0;
 
 void HookLog(const char* line) {
   std::lock_guard<std::mutex> lk(g_hook_mu);
@@ -653,9 +560,10 @@ void HookLog(const char* line) {
 void StartFlusher() {
   bool expected = false;
   if (!g_flusher.compare_exchange_strong(expected, true)) return;
+  HookLog("hitwatch v4 (RE-1 round 7) started\n");
   std::thread([] {
-    static unsigned last[kNumHooks] = {};
-    static char buf[8192];
+    unsigned last[kNumHooks] = {};
+    char buf[512];
     for (;;) {
       std::this_thread::sleep_for(std::chrono::seconds(1));
       int w = std::snprintf(buf, sizeof(buf), "hooks tick=%lu", (unsigned long)GetTickCount());
@@ -663,32 +571,304 @@ void StartFlusher() {
       for (int i = 0; i < kNumHooks; ++i) {
         const unsigned now = g_hook_calls[i].load();
         const unsigned d = now - last[i];
-        g_hook_prev[i].store(d);
         last[i] = now;
         if (!d) continue;
-        any = true;
+        if (i != kTeamQ) any = true;  // the team query runs all the time: no line on its own
         if (w < int(sizeof(buf)) - 32) w += std::snprintf(buf + w, sizeof(buf) - w, " %s=%u", kHooks[i], d);
       }
       if (any) { std::snprintf(buf + w, sizeof(buf) - w, "\n"); HookLog(buf); }
     }
   }).detach();
 }
+
+// Caller holds g_ev_mu.
+bool LineBudget(int i) {
+  const unsigned sec = unsigned(GetTickCount() / 1000u);
+  if (g_line_sec[i] != sec) { g_line_sec[i] = sec; g_line_n[i] = 0; }
+  return g_line_n[i]++ < (i == kSnapshot ? 2 : kLinesPerSec);
+}
+bool Budget(int i) {
+  std::lock_guard<std::mutex> lk(g_ev_mu);
+  return LineBudget(i);
+}
+
+struct PlayerInfo {
+  uint32_t cls = 0; int index = -1; int team = -1;
+  int auto_byte = -1; uint32_t w040 = 0, w248 = 0, w3d0 = 0;
+  bool Auto() const { return auto_byte == 0; }
+};
+PlayerInfo ReadPlayer(uint32_t va) {
+  PlayerInfo p;
+  uint8_t* vb = VBase();
+  if (!vb || va < 0x40000000u) return p;
+  const uint8_t* h = Host(vb, va);
+  if (!Readable(h, 0x3D4)) return p;
+  p.cls = Be(h);
+  p.index = h[kOffIndex];
+  p.team = h[kOffTeam];
+  p.auto_byte = h[kOffAuto];
+  p.w040 = Be(h + 0x40);
+  p.w248 = Be(h + 0x248);
+  p.w3d0 = Be(h + 0x3D0);
+  return p;
+}
+void Name(char* out, size_t n, uint32_t va, const PlayerInfo& p) {
+  const bool me = va && va == rogue::BapPlayer();
+  if (me && p.Auto()) std::snprintf(out, n, "ME*");
+  else if (me) std::snprintf(out, n, "ME");
+  else if (p.Auto()) std::snprintf(out, n, "AUTO");
+  else if (p.cls == kClassGoalie) std::snprintf(out, n, "G%04X", unsigned(va & 0xFFFFu));
+  else std::snprintf(out, n, "%04X", unsigned(va & 0xFFFFu));
+}
+
+// Newest contact within kLinkMs for the pair (any pair if any_pair). Caller holds g_ev_mu.
+HitEvent* Recent(uint32_t hitter, uint32_t victim, bool any_pair) {
+  const unsigned long now = GetTickCount();
+  for (int k = 0; k < g_ev_count; ++k) {
+    HitEvent& e = g_ev[(g_ev_head - 1 - k + 2 * kMaxEvents) % kMaxEvents];
+    if (now - e.tick > kLinkMs) break;
+    if (any_pair || (e.hitter == hitter && e.victim == victim)) return &e;
+  }
+  return nullptr;
+}
+
+void LogCall(int i, uint32_t r3, uint32_t r4, uint32_t r5, uint32_t r6, uint32_t r7,
+             unsigned long long lr) {
+  if (!Budget(i)) return;
+  char buf[256];
+  std::snprintf(buf, sizeof(buf), "call %s tick=%lu r3=%08X r4=%08X r5=%08X r6=%08X r7=%08X lr=%08llX\n",
+                kHooks[i], (unsigned long)GetTickCount(), r3, r4, r5, r6, r7, lr);
+  HookLog(buf);
+}
+
+void DumpObject(const char* what, uint32_t va) {
+  uint8_t* vb = VBase();
+  if (!vb || va < 0x40000000u) return;
+  const uint8_t* h = Host(vb, va);
+  char b[160];
+  if (!Readable(h, kDumpBytes)) {
+    std::snprintf(b, sizeof(b), "dump %s %08X: not readable\n", what, va);
+    HookLog(b);
+    return;
+  }
+  const PlayerInfo p = ReadPlayer(va);
+  std::string s;
+  std::snprintf(b, sizeof(b), "dump %s %08X idx=%d team=%d class=%08X (%d bytes, big-endian words):\n",
+                what, va, p.index, p.team, p.cls, kDumpBytes);
+  s += b;
+  for (int o = 0; o < kDumpBytes; o += 32) {
+    int w = std::snprintf(b, sizeof(b), "  +%03X:", o);
+    for (int k = 0; k < 32; k += 4) w += std::snprintf(b + w, sizeof(b) - w, " %08X", Be(h + o + k));
+    std::snprintf(b + w, sizeof(b) - w, "\n");
+    s += b;
+  }
+  HookLog(s.c_str());
+}
 }  // namespace
+
+void ContactSeen(uint32_t victim, uint32_t hitter, uint32_t reaction, float power,
+                 unsigned long long lr) {
+  if (!Enabled()) return;
+  g_hook_calls[kContact].fetch_add(1, std::memory_order_relaxed);
+  StartFlusher();
+  const uint32_t me = rogue::BapPlayer();
+  const PlayerInfo ph = ReadPlayer(hitter), pv = ReadPlayer(victim);
+  const bool kd = reaction == kReactKnockdown;
+  const bool my_hit = me && hitter == me && victim != me;
+  const bool boosted = t_in_reaction && t_boosted && t_victim == victim;
+  bool counted = false, counted_kd = false, log;
+  {
+    std::lock_guard<std::mutex> lk(g_ev_mu);
+    const unsigned long now = GetTickCount();
+    if (my_hit) {
+      counted = !(g_you_last_victim == victim && now - g_you_last_tick < kSameHitMs);
+      if (counted) ++g_you.hits;
+      g_you_last_victim = victim;
+      g_you_last_tick = now;
+      if (kd && pv.cls == kClassSkater) { ++g_you.knockdowns; counted_kd = true; }
+    }
+    if (me && victim == me && kd) ++g_you.knocked_down;
+    if (me) {  // auto marker vs claim, for both players of the contact
+      for (int k = 0; k < 2; ++k) {
+        const uint32_t va = k ? victim : hitter;
+        const bool a = (k ? pv : ph).Auto();
+        if (va == me) a ? ++g_you.auto_agree : ++g_you.auto_missed;
+        else if (a) ++g_you.auto_wrong;
+      }
+    } else if (ph.Auto() || pv.Auto()) {
+      ++g_you.auto_seen;
+    }
+    HitEvent& e = g_ev[g_ev_head];
+    e = HitEvent{};
+    e.tick = now;
+    e.hitter = hitter;
+    e.victim = victim;
+    e.reaction = reaction;
+    e.knockdown = kd;
+    e.power = power;
+    e.hitter_me = me && hitter == me;
+    e.victim_me = me && victim == me;
+    e.hitter_goalie = ph.cls == kClassGoalie;
+    e.hitter_auto = ph.Auto();
+    e.victim_auto = pv.Auto();
+    e.victim_goalie = pv.cls == kClassGoalie;
+    e.boosted = boosted;
+    e.counted = counted;
+    g_ev_head = (g_ev_head + 1) % kMaxEvents;
+    if (g_ev_count < kMaxEvents) ++g_ev_count;
+    log = LineBudget(kContact);
+  }
+  if (log) {
+    char buf[480];
+    std::snprintf(buf, sizeof(buf),
+                  "contact tick=%lu victim=%08X hitter=%08X react=%08X power=%.3f hidx=%d vidx=%d "
+                  "hteam=%d vteam=%d hclass=%08X vclass=%08X me=%08X boosted=%d counted=%d kd_counted=%d "
+                  "hauto=%d vauto=%d h040=%08X v040=%08X h248=%08X v248=%08X h3d0=%08X v3d0=%08X lr=%08llX\n",
+                  (unsigned long)GetTickCount(), victim, hitter, reaction, double(power), ph.index,
+                  pv.index, ph.team, pv.team, ph.cls, pv.cls, me, int(boosted), int(counted),
+                  int(counted_kd), ph.auto_byte, pv.auto_byte, ph.w040, pv.w040, ph.w248, pv.w248,
+                  ph.w3d0, pv.w3d0, lr);
+    HookLog(buf);
+  }
+  char hn[16], vn[16], t[112];
+  Name(hn, sizeof(hn), hitter, ph);
+  Name(vn, sizeof(vn), victim, pv);
+  const bool goalie_kd = kd && pv.cls == kClassGoalie;
+  std::snprintf(t, sizeof(t), "%s%s%s  %s -> %s",
+                kd ? "KNOCKDOWN" : reaction == kReactNormal ? "HIT" : "CONTACT (new kind)",
+                goalie_kd ? " (goalie shrugs)" : "", boosted ? " (boosted)" : "", hn, vn);
+  fx::Push(kd && !goalie_kd ? fx::Kind::kKnockdown : fx::Kind::kMilestone, t);
+}
 
 void HookHit(int i, uint32_t r3, uint32_t r4, uint32_t r5, uint32_t r6, uint32_t r7,
              unsigned long long lr) {
   if (!Enabled()) return;
   g_hook_calls[i].fetch_add(1, std::memory_order_relaxed);
   StartFlusher();
-  if (g_hook_prev[i].load(std::memory_order_relaxed) >= 30) return;  // per-frame: counts only
-  const unsigned sec = unsigned(GetTickCount() / 1000u);
-  if (g_hook_sec[i].exchange(sec) != sec) g_hook_sec_n[i].store(0);
-  if (g_hook_sec_n[i].fetch_add(1) >= 2) return;
-  char buf[256];
-  std::snprintf(buf, sizeof(buf), "call %s tick=%lu r3=%08X r4=%08X r5=%08X r6=%08X r7=%08X lr=%08llX\n",
-                kHooks[i], (unsigned long)GetTickCount(), r3, r4, r5, r6, r7, lr);
+  LogCall(i, r3, r4, r5, r6, r7, lr);
+  std::lock_guard<std::mutex> lk(g_ev_mu);
+  if (i == kCredit) {
+    if (HitEvent* e = Recent(r4, r5, false)) e->credited = true;
+  } else if (i == kStrength) {
+    if (HitEvent* e = Recent(r4, r5, false))
+      if (e->strength < 0 && r7 < 16u) e->strength = int(r7);
+  } else if (i == kFall) {
+    if (HitEvent* e = Recent(0, 0, true)) e->fall = true;
+  }
+}
+
+// sub_834EA6D0(player, 0) = team query (round 5). Used here to collect every player object.
+void TeamQueryResult(uint32_t player, uint32_t arg, uint32_t result, unsigned long long lr) {
+  if (!Enabled() || arg != 0u || player < 0x40000000u) return;
+  g_hook_calls[kTeamQ].fetch_add(1, std::memory_order_relaxed);
+  StartFlusher();
+  bool fresh = false;
+  {
+    std::lock_guard<std::mutex> lk(g_pl_mu);
+    int k = 0;
+    for (; k < g_pl_n; ++k) if (g_pl[k].player == player) break;
+    if (k == g_pl_n) {
+      if (g_pl_n >= kMaxPlayers) return;
+      g_pl[g_pl_n++] = {player, result};
+      fresh = true;
+    } else {
+      g_pl[k].team_q = result;
+    }
+  }
+  if (!fresh || !Budget(kTeamQ)) return;
+  const PlayerInfo p = ReadPlayer(player);
+  char buf[200];
+  std::snprintf(buf, sizeof(buf), "player new %08X teamq=%u idx=%d team=%d class=%08X lr=%08llX\n",
+                player, result & 0xFFu, p.index, p.team, p.cls, lr);
   HookLog(buf);
 }
+
+// sub_83429560 (reaction dispatcher): r3 = victim, r4 = hitter.
+void ReactionBegin(uint32_t victim, uint32_t hitter) {
+  t_in_reaction = true;
+  t_victim = victim;
+  t_hitter = hitter;
+  t_boosted = false;
+  t_desc = 0;
+}
+void ReactionEnd(uint32_t applied) {
+  if (Enabled() && t_desc && Budget(kReaction)) {
+    char buf[200];
+    std::snprintf(buf, sizeof(buf), "reaction-end tick=%lu victim=%08X hitter=%08X desc=%08X applied=%u boosted=%d\n",
+                  (unsigned long)GetTickCount(), t_victim, t_hitter, t_desc, applied & 0xFFu, int(t_boosted));
+    HookLog(buf);
+  }
+  t_in_reaction = false;
+}
+// sub_833B9028 (reaction choice from power): TEST hook. Returns the power the original sees.
+double ReactionPowerIn(double power) {
+  if (!Enabled() || !t_in_reaction) return power;
+  const uint32_t me = rogue::BapPlayer();
+  const float k = g_boost.load();
+  if (!me || t_hitter != me || t_victim == me || k == 1.f) return power;
+  t_boosted = true;
+  return power * double(k);
+}
+void ReactionChosen(double power_in, double power_used, uint32_t desc, unsigned long long lr) {
+  if (!Enabled()) return;
+  g_hook_calls[kReaction].fetch_add(1, std::memory_order_relaxed);
+  StartFlusher();
+  if (t_in_reaction) t_desc = desc;
+  if (!Budget(kReaction)) return;
+  char buf[220];
+  std::snprintf(buf, sizeof(buf), "reaction tick=%lu power=%.3f used=%.3f desc=%08X in_dispatch=%d victim=%08X hitter=%08X lr=%08llX\n",
+                (unsigned long)GetTickCount(), power_in, power_used, desc, int(t_in_reaction),
+                t_in_reaction ? t_victim : 0u, t_in_reaction ? t_hitter : 0u, lr);
+  HookLog(buf);
+}
+
+void SetPowerTest(float factor) {
+  g_boost.store(factor);
+  char buf[96];
+  std::snprintf(buf, sizeof(buf), "power test x%.2f (claimed player's hits only)\n", double(factor));
+  HookLog(buf);
+}
+float PowerTest() { return g_boost.load(); }
+
+// After a claim: dump the claimed player and every other known player once (1 KB each).
+void DumpPlayersForClaim(uint32_t me) {
+  if (!Enabled() || !me) return;
+  PlayerEntry copy[kMaxPlayers];
+  int n;
+  {
+    std::lock_guard<std::mutex> lk(g_pl_mu);
+    n = g_pl_n;
+    std::memcpy(copy, g_pl, sizeof(PlayerEntry) * size_t(n));
+  }
+  char b[96];
+  std::snprintf(b, sizeof(b), "CLAIM tick=%lu me=%08X players=%d\n", (unsigned long)GetTickCount(), me, n);
+  HookLog(b);
+  DumpObject("me", me);
+  for (int k = 0; k < n; ++k)
+    if (copy[k].player != me) DumpObject("other", copy[k].player);
+}
+
+int HitEventCount() {
+  std::lock_guard<std::mutex> lk(g_ev_mu);
+  return g_ev_count;
+}
+bool HitEventGet(int i, HitEvent* out) {
+  std::lock_guard<std::mutex> lk(g_ev_mu);
+  if (!out || i < 0 || i >= g_ev_count) return false;
+  *out = g_ev[(g_ev_head - 1 - i + 2 * kMaxEvents) % kMaxEvents];
+  return true;
+}
+YouStats YouCounts() {
+  std::lock_guard<std::mutex> lk(g_ev_mu);
+  return g_you;
+}
+void YouReset() {
+  std::lock_guard<std::mutex> lk(g_ev_mu);
+  g_you = YouStats{};
+  g_you_last_victim = 0;
+  HookLog("ME counts reset\n");
+}
+unsigned long TickNow() { return (unsigned long)GetTickCount(); }
 
 void Mark() {
   if (!Enabled()) return;
@@ -699,6 +879,8 @@ void Mark() {
 }  // namespace rogue::probe
 
 // Strong overrides of the generated functions (same pattern as src/diag_hooks.cpp).
+// Pass-through: the original always runs, with the same registers. The hit contact, the reaction
+// dispatcher and the reaction choice are hooked in rogue_hooks.cpp.
 #define ROGUE_PROBE_HOOK(addr, idx)                                                     \
   REX_EXTERN(__imp__sub_##addr);                                                        \
   extern "C" REX_FUNC(sub_##addr) {                                                     \
@@ -706,144 +888,19 @@ void Mark() {
                           (unsigned long long)ctx.lr);                                  \
     __imp__sub_##addr(ctx, base);                                                       \
   }
-ROGUE_PROBE_HOOK(828B9258, 0)  // gSpeedBoostRatioForMinBalanceLoss
-ROGUE_PROBE_HOOK(828CC300, 1)  // gAccelToProhibitForwardTurns, gBalanceCarrierFallThreshold
-ROGUE_PROBE_HOOK(828FEBD8, 2)  // gEffectiveMinEnergy, gMinEnergyForNoEffectPK
-ROGUE_PROBE_HOOK(82929FB0, 3)  // gAlwaysUpdateBalanceRatio, gBalanceAdjustmentEnd
-ROGUE_PROBE_HOOK(8292AE50, 4)  // gHitBasedLengthCoefficient
-ROGUE_PROBE_HOOK(8292B550, 5)  // gCollisionBodyTension
-ROGUE_PROBE_HOOK(8292B808, 6)  // gContactCOMDelta, gDefaultCom
-ROGUE_PROBE_HOOK(82936F28, 7)  // gHitBasedBlacoutCoefficient, gHitBasedLengthCoefficient
-ROGUE_PROBE_HOOK(829380A0, 8)  // gClampDeltaAngle, gDrivenFallRelaxedModifier
-ROGUE_PROBE_HOOK(8293A148, 9)  // gCollisionVelocityCompensationValue
-ROGUE_PROBE_HOOK(8293A3E8, 10)  // gBalanceMax, gBalanceReactionMax
-ROGUE_PROBE_HOOK(8293A998, 11)  // gStumbleVelocityCompensationValue
-ROGUE_PROBE_HOOK(8293AB78, 12)  // gStumbleBodyTension
-ROGUE_PROBE_HOOK(82A3B770, 13)  // gDefSkaterBalance, gDefSkaterBodyChecking
-ROGUE_PROBE_HOOK(82DBEFB0, 14)  // gBoardHitIntensityScale
-ROGUE_PROBE_HOOK(82DBF2A0, 15)  // gPlayerHitIntensityScale
-ROGUE_PROBE_HOOK(83310E68, 16)  // gHandlePotentialKnockedOverPenaltiesTime, gHandlePotentialNotKnockedOverPenaltiesTime
-ROGUE_PROBE_HOOK(8331B8F0, 17)  // gKnockDownValue
-ROGUE_PROBE_HOOK(83328180, 18)  // gBoardPinchNoCollisionFrames
-ROGUE_PROBE_HOOK(83339558, 19)  // gMinPushAwayScale
-ROGUE_PROBE_HOOK(8333F9C0, 20)  // gBoardCollisionStressForMaxEffect, gBoardCollisionStressForMinEffect
-ROGUE_PROBE_HOOK(833442E8, 21)  // gSlowFallenGuysAfterThis
-ROGUE_PROBE_HOOK(8334F930, 22)  // gAugmentHipCheckYVelocity
-ROGUE_PROBE_HOOK(833A1F40, 23)  // gLayDownCollisionRadiusPadInches
-ROGUE_PROBE_HOOK(833B90E0, 24)  // gDirectHitForMax, gDirectHitForMin
-ROGUE_PROBE_HOOK(833B9730, 25)  // gGPPhysicalPreparednessForShooting
-ROGUE_PROBE_HOOK(833B9AE8, 26)  // gGPFallMax, gGPFallMin
-ROGUE_PROBE_HOOK(833BF998, 27)  // gMaxLowHitRatioForEffect, gMinLowHitRatioForEffect
-ROGUE_PROBE_HOOK(833C09E8, 28)  // gHitInjuryChanceMultiplier
-ROGUE_PROBE_HOOK(833CA500, 29)  // gBoardsCheckingEffectiveRating, gGPStumbleMin
-ROGUE_PROBE_HOOK(833E0BF8, 30)  // gGPFallMin
-ROGUE_PROBE_HOOK(833E3D58, 31)  // gBaseHitComparisonPriority
-ROGUE_PROBE_HOOK(833EBD80, 32)  // gHitsForIntimidatingShift
-ROGUE_PROBE_HOOK(833F27E8, 33)  // gBigHitterMinHitPct
-ROGUE_PROBE_HOOK(833F3330, 34)  // gTeamHitsMinHits
-ROGUE_PROBE_HOOK(833F8AC8, 35)  // gDesperationNoCollisionFrames
-ROGUE_PROBE_HOOK(8340C690, 36)  // gPhysicsRatingsDiffMax, gPhysicsRatingsDiffMin
-ROGUE_PROBE_HOOK(8340C7E0, 37)  // gSpecialCaseModifierShooting
-ROGUE_PROBE_HOOK(8340DB90, 38)  // gBodyTensionBase
-ROGUE_PROBE_HOOK(83411AD0, 39)  // gWeightOfRelativeSpeedToTarget, gWeightOfSpeedToTarget
-ROGUE_PROBE_HOOK(83412298, 40)  // gCheckeeDefaultBalance, gCheckerDefaultBalance
-ROGUE_PROBE_HOOK(83427068, 41)  // gBodyTensionBase
-ROGUE_PROBE_HOOK(83429800, 42)  // gBothBehaviorBalanceTunerMax, gBothBehaviorBalanceTunerMid
-ROGUE_PROBE_HOOK(834299F0, 43)  // gBalanceInequality, gBodyTensionBase
-ROGUE_PROBE_HOOK(83429EC8, 44)  // gBalanceInequality
-ROGUE_PROBE_HOOK(8342A2A8, 45)  // gBothBehaviorBalanceTunerMax, gBothBehaviorBalanceTunerMid
-ROGUE_PROBE_HOOK(8342A938, 46)  // gDefaultBalanceThreshold, gDefaultContactCOMRatio
-ROGUE_PROBE_HOOK(8342B290, 47)  // gPlayerPlayerDistanceToEnable
-ROGUE_PROBE_HOOK(8342B8C8, 48)  // gPlayerPlayerDistanceToEnable
-ROGUE_PROBE_HOOK(8342C628, 49)  // gHipCheckContactCOMRatio, gHipCheckNoVelocityUpdateFrames
-ROGUE_PROBE_HOOK(8342CDD0, 50)  // gPlayerPlayerDistanceToEnable
-ROGUE_PROBE_HOOK(83437DF8, 51)  // gDefaultBalance, gHipCheckRestartWithLowControlPenalty
-ROGUE_PROBE_HOOK(834551C8, 52)  // gBodyTensionBase
-ROGUE_PROBE_HOOK(834553D8, 53)  // gBodyTensionBase
-ROGUE_PROBE_HOOK(83459350, 54)  // gDegreesForFullLowHipSwing, gHipCheckLowIntentMinimalDistance
-ROGUE_PROBE_HOOK(83465C48, 55)  // gMaxFatigue, gRightSickFramesForHold
-ROGUE_PROBE_HOOK(83467988, 56)  // gBodyTensionBase
-ROGUE_PROBE_HOOK(8346E460, 57)  // gBodyTensionBase
-ROGUE_PROBE_HOOK(83470DF8, 58)  // gBodyTensionBase
-ROGUE_PROBE_HOOK(83470E48, 59)  // gBodyTensionBase
-ROGUE_PROBE_HOOK(83476288, 60)  // gAITuneAIHittingTunePenInjuryModifier, gAITuneAIHittingTunePenPlayoffsModifier
-ROGUE_PROBE_HOOK(834859E0, 61)  // gPenaltyChanceCrossChecking, gPenaltyChanceHitIntoBoards
-ROGUE_PROBE_HOOK(834BF428, 62)  // gBFFallOverMaxThreatDist, gChanceToFallOver
-ROGUE_PROBE_HOOK(834D8580, 63)  // gPlayPhysical_Hits, gPlayPhysical_WasHit
-ROGUE_PROBE_HOOK(834E9FA8, 64)  // gBalancePenalty_GlobalScale, gBalancePenalty_HitBumped
-ROGUE_PROBE_HOOK(834F0A48, 65)  // gHitterMaxDistToDestEffort, gHitterMaxDistToTarget
-ROGUE_PROBE_HOOK(834F24E0, 66)  // gManualHipCheckWinHeightFactor, gSpeedBasedHipCheckProportion
-ROGUE_PROBE_HOOK(835038B8, 67)  // gBoardPlayFootCollisionRadius
-ROGUE_PROBE_HOOK(83505630, 68)  // gBodyTensionBase
-ROGUE_PROBE_HOOK(8350E600, 69)  // gBoardCollisionAnticipationTime
-ROGUE_PROBE_HOOK(8351AE18, 70)  // gAutoHitAimingAtTargetDist, gAutoHitEarlyHitFrames
-ROGUE_PROBE_HOOK(8351B5A0, 71)  // gAutoHitDefaultCancelActionRefractoryPeriod
-ROGUE_PROBE_HOOK(8351B6D0, 72)  // gMinRelSpeedForAutoCheck, gMinSpeedToCareAboutRelSpeedForAutoCheck
-ROGUE_PROBE_HOOK(83522198, 73)  // gAggressiveCheckButtonTap
-ROGUE_PROBE_HOOK(83524F60, 74)  // gAutoCheckCancelDelay, gHipCheckRefractoryTime
-ROGUE_PROBE_HOOK(835334A0, 75)  // gPairUpAutoHitChance, gPairUpAutoHitChanceSuperstarVictim
-ROGUE_PROBE_HOOK(83552AB8, 76)  // gCheckingContinueAngle
-ROGUE_PROBE_HOOK(8357F748, 77)  // gCheckSpeedModerate, gCheckSpeedSlow
-ROGUE_PROBE_HOOK(8357F9A0, 78)  // gEndorphineHitInjuryTestFrequency
-ROGUE_PROBE_HOOK(8357FAC0, 79)  // gMaxDistForHit
-ROGUE_PROBE_HOOK(83580BF8, 80)  // gHowDoIStepUpGuarding
-ROGUE_PROBE_HOOK(83580CE8, 81)  // gStepUp_Shove_IncludeBackAnglePies
-ROGUE_PROBE_HOOK(83580E90, 82)  // gHowDoIStepUpShove
-ROGUE_PROBE_HOOK(83581208, 83)  // gDeflectionNoCollisionFrames
-ROGUE_PROBE_HOOK(83582C90, 84)  // gBenchSitHitReactXOffset
-ROGUE_PROBE_HOOK(835831D0, 85)  // gBenchHitBoardDist, gBenchHitReactionDist
-ROGUE_PROBE_HOOK(835834E0, 86)  // gBenchHitReactionDist
-ROGUE_PROBE_HOOK(835844B0, 87)  // gHookReactTimeScale, gTripFallFrequency
-ROGUE_PROBE_HOOK(83585028, 88)  // gHitAssistAccelScale, gHitAssistMaxSpeedScale
-ROGUE_PROBE_HOOK(835853A8, 89)  // gAssumedHitterSpeed
-ROGUE_PROBE_HOOK(835888E8, 90)  // gMaxFramesToAllowCheckingLayer
-ROGUE_PROBE_HOOK(83588BF8, 91)  // gBiasedStrengthSizeAvg, gHitTune_GlobalScale
-ROGUE_PROBE_HOOK(83588ED8, 92)  // gMaxCheckIntentForHipCheck
-ROGUE_PROBE_HOOK(83589190, 93)  // gEndorphineBoardHitSizeDiff
-ROGUE_PROBE_HOOK(83589570, 94)  // gBackPieHitSpeedThreshold, gCheckCollisionRadiusMoving
-ROGUE_PROBE_HOOK(83589B38, 95)  // gBigHitIntimidation, gBigHitIntimidationReduction
-ROGUE_PROBE_HOOK(8358A348, 96)  // gTimeAfterReleaseForHitToCount
-ROGUE_PROBE_HOOK(8358D100, 97)  // gTriggerCancelDist
-ROGUE_PROBE_HOOK(8358D310, 98)  // gMaxDistToDestForHitCancelInMeters
-ROGUE_PROBE_HOOK(8358D478, 99)  // gInterceptTimeForCheckIntentTrigger, gMaxDistToDestForHitInMeters
-ROGUE_PROBE_HOOK(8358DBD0, 100)  // gGuardingActionEffort
-ROGUE_PROBE_HOOK(8358DFC0, 101)  // gIZGuardingActionEffort
-ROGUE_PROBE_HOOK(8358EB88, 102)  // gFinishChecks_MaxTimeBuffer, gFinishChecks_MaxUndisciplinedLateHit
-ROGUE_PROBE_HOOK(8358EE30, 103)  // gExtraShoveDistanceScale, gStepUp_Shove_DistFromBoards
-ROGUE_PROBE_HOOK(83593FC8, 104)  // gElbowLikelihoodScale
-ROGUE_PROBE_HOOK(83594968, 105)  // gDistForOpponentToBeConsideredCheckable, gMinNumFramesBetweenHit
-ROGUE_PROBE_HOOK(83594BD0, 106)  // gDefaultBalance
-ROGUE_PROBE_HOOK(83594CB8, 107)  // gBenchHitMaxCheckeeSpeed, gEndorphineBoardHitMinCheckingRating
-ROGUE_PROBE_HOOK(83595320, 108)  // gBoardplayGameEventFrame, gBoardplaySizeDiffCheckExit
-ROGUE_PROBE_HOOK(83596B38, 109)  // gPlayerFaceDiffMaxDegrees, gPlayerSizeDiffMax
-ROGUE_PROBE_HOOK(83597360, 110)  // gMomentumMaintainedWin, gMomentumPhysicsCheckingAttributeWeightBoost
-ROGUE_PROBE_HOOK(83597FF0, 111)  // gMaxFramesSinceLastTouchForNoPenalty
-ROGUE_PROBE_HOOK(83599B68, 112)  // gCheckingActionAngleToFacing, gCheckingActionEffort
-ROGUE_PROBE_HOOK(8359A1D0, 113)  // gNearBoardsHighSlotCheckAngle
-ROGUE_PROBE_HOOK(8359B378, 114)  // gHowDoIStepUpPoking
-ROGUE_PROBE_HOOK(8359B600, 115)  // gHowDoIStepUpBoardPin, gStepUp_BoardPin_DefMaxSpeed
-ROGUE_PROBE_HOOK(8359B7C8, 116)  // gShoveFrequency, gShoveMinScore
-ROGUE_PROBE_HOOK(8359BA08, 117)  // gChecking_NoSwitchTargetDist, gStepUp_SortMethod
-ROGUE_PROBE_HOOK(8359BF10, 118)  // gCheckingHumanPrevCarrierTicks
-ROGUE_PROBE_HOOK(8359C3F8, 119)  // gStepUpPossibleHitMaxDistApart, gStepUpPossibleHitPlayerReach
-ROGUE_PROBE_HOOK(8359C700, 120)  // gChecking_SlowSpeedDecline, gChecking_SlowSpeedDeclineRadiusMax
-ROGUE_PROBE_HOOK(8359FAF0, 121)  // gDefaultBalance
-ROGUE_PROBE_HOOK(8359FE68, 122)  // gBracingPenalty, gFacingAngleDifferenceWeight
-ROGUE_PROBE_HOOK(835A06E8, 123)  // gDigAnimPctPenaltyCheckEnd, gDigAnimPctPenaltyCheckStart
-ROGUE_PROBE_HOOK(835A1640, 124)  // gSlashActionEffort
-ROGUE_PROBE_HOOK(835A18C0, 125)  // gCheckingFromBehind_DistReq, gCheckingFromBehind_SpeedDiff
-ROGUE_PROBE_HOOK(835A2338, 126)  // gHowDoIStepUpMinValidScore
-ROGUE_PROBE_HOOK(835A3618, 127)  // gMissedBoardhitDelayFrames
-ROGUE_PROBE_HOOK(835A4258, 128)  // gAllowHitFromBehindBoardDist, gHitTune_ClosingSpeedForMax
-ROGUE_PROBE_HOOK(835A47D0, 129)  // gMinStressForCoincidental
-ROGUE_PROBE_HOOK(835A4BE0, 130)  // gMaxForceDistBoardsDistRatio, gMinHeightForBoarding
-ROGUE_PROBE_HOOK(835A5F10, 131)  // gSlashHighChance
-ROGUE_PROBE_HOOK(835A62E8, 132)  // gChecking_SlowSpeedDeclineProbMax
-ROGUE_PROBE_HOOK(835A6CE0, 133)  // gSmallHitIntimidation
-ROGUE_PROBE_HOOK(835A7078, 134)  // gFinishChecks_MaxTimeBuffer, gInstigationChanceIntimidation
-ROGUE_PROBE_HOOK(835A8690, 135)  // gBenchHitResultVel, gBoardplayAngleDiff
-ROGUE_PROBE_HOOK(835A98D0, 136)  // gMaxFramesToFindCollidingPlayer
-ROGUE_PROBE_HOOK(835BD388, 137)  // gDeviation_FallingRecoveryTime
-ROGUE_PROBE_HOOK(835CF688, 138)  // gMinPushAwayScale
-ROGUE_PROBE_HOOK(835E7990, 139)  // gBoardCollisionLeadTime, gHitLossChancePerFrame
-ROGUE_PROBE_HOOK(835EB920, 140)  // gNoPlayerCollisionFrames, gPlayerCollisionClosestPlayerDist
+ROGUE_PROBE_HOOK(8357F9A0, 0)  // hit credit: r4 hitter, r5 victim (r7 = hitter again)
+ROGUE_PROBE_HOOK(83589B38, 1)  // same caller, just before: r4 hitter, r5 victim, r7 strength 0..3 (round 3)
+ROGUE_PROBE_HOOK(829380A0, 2)  // fall path: runs only when a skater really goes down
+ROGUE_PROBE_HOOK(828CC300, 4)  // skating settings snapshot (TUN-12 cadence)
+
+// Team query (round 5): result read after the original; collects all player objects.
+REX_EXTERN(__imp__sub_834EA6D0);
+extern "C" REX_FUNC(sub_834EA6D0) {
+  const uint32_t player = ctx.r3.u32, arg = ctx.r4.u32;
+  const unsigned long long lr = ctx.lr;
+  __imp__sub_834EA6D0(ctx, base);
+  if (rogue::probe::Enabled()) rogue::probe::TeamQueryResult(player, arg, ctx.r3.u32, lr);
+}
+
+// The reaction dispatcher sub_83429560 and the reaction choice sub_833B9028 are hooked in
+// rogue_hooks.cpp (ROGUE_ADDR_REACTION_DISPATCH / _CHOICE); they call the Reaction* functions above.

@@ -307,3 +307,108 @@ RE-1 analysis of the sweep log.
 `docs/re-findings.md`.
 **Validation:** static only.
 **Next action:** see current-status "Recommended next action" (sweep run first).
+
+### 2026-10-30 - Hannah - Perk readout verified; RE-1 round 3 decoded; round 4 hit watch
+**Objective:** Pick up after the context wipe, analyse the owner's sweep run, prepare the
+confirmation run.
+**Done:**
+- Verified GitHub HEAD = 6f4d665 (contains every 2026-10-29 package; current-status said
+  3ce8b2a + uncommitted work, now fixed).
+- Owner: perk readout PASS (wrist shot power stock -> perk value -> stock). TUN-6 path verified.
+- Owner sweep run (training 1-on-1, 472 s, 5 marked checks, 1.58 MB log). Analysed with a
+  sandbox script (per-second counts + call lines vs marks; marks lag checks by 4.1-4.7 s).
+  Contact = sub_833E0BF8 (r3 victim, r4 hitter, r6 0x83ABF598 on all 3 knockdowns /
+  0x83ABF57C on both small hits); credit = sub_8357F9A0 / sub_83589B38 (r4 hitter, r5 victim,
+  r7 0..3; missed mark 1); knockdown-only = sub_829380A0; skating snapshot sub_828CC300 runs in
+  29 bursts, not per frame. Details: current-status Key finding 2026-10-30.
+- Round 4 hit watch: the 141-function sweep is replaced by 7 pass-through hooks. Each contact
+  pushes an on-screen HIT / KNOCKDOWN line (hitter -> victim, last 4 hex digits); the panel
+  lists the last 12 contacts with credit / fall flags; first sight of each player object (512
+  bytes) and reaction pointer (64 bytes) is dumped once; call lines capped at 40/s per function.
+- Slice command for the owner (sub_833E0BF8 body, callers, call sites; sub_8357F9A0 call sites).
+**Files changed:** `src/rogue_probe.cpp` (RE-1 section rewritten; rest unchanged except
+`#include "rogue/fx.h"`), `include/rogue/probe.h` (HitEvent + accessors), `src/rogue_panel.cpp`
+(Hit watch section), `docs/current-status.md`, `docs/handoff-log.md`.
+**Validation:** C++ not compiled by the agent (no local build). No new .cpp: incremental build.
+**Proven:** perk readout. Round 3 reading is OBSERVED in one session only (5 marked checks).
+**Hypotheses / unresolved:** r6 0x83ABF598 = knockdown descriptor; sub_8357F9A0 = hit stat
+credit; player objects are per-session heap addresses; snapshot rebuilds at drill resets.
+re-findings.md round-3 entry and user-guide 4c NOT written yet (owed; evidence is in
+current-status).
+**Next action:** owner slice command + BUILD-8 + round 4 run (current-status Recommended next
+action 1-2); agent: confirm RE-1, addresses.h, first hit / knockdown wiring.
+
+### 2026-10-30 (13:45) - Hannah - Round 4 decoded; hit contact CONFIRMED; round 5 package
+**Objective:** Analyse round 4 + the owner's static slice; wire the confirmed hook.
+**Done:**
+- Round 4 log (157 KB, ~16 min, exhibition + training): 59 contacts in 39 interactions. Owner:
+  hitter -> victim correct, knockdowns consistently labelled, 2-3 lines per collision, goalie
+  knockdown with no effect. Explained: one contact call per reacting player; goalies take the
+  knockdown reaction but never run the fall code; goalie class pointer differs.
+- My error: the round 4 "credit" column showed `sub_8357F9A0` r7, which is the hitter object
+  (both sessions); round 3's strength came from `sub_83589B38`. Fixed (hooked) in round 5.
+- The round 4 reaction-pointer dump never appeared (cause not found); the static read made it
+  unnecessary, so round 5 drops the dumps.
+- Player dumps: +0x38 == 0x02 on the owner's player only (2 of 34); owner says he switched players
+  in the exhibition, so it probably means "controlled right now" (fine for BAP, which is locked).
+- Static read of `hit_slices.txt`: see re-findings.md "Hit contact sub_833E0BF8".
+- Package: hit contact moved to `rogue_hooks.cpp` (literal sub_833E0BF8 names, forwards to the
+  probe, counts BAP hits / knockdowns once ROGUE_OFF_SKATER_CONTROLLER is defined); addresses.h
+  (2 CONFIRMED defines, 3 commented candidates); rogue_mod.cpp (hook hits replace the manual entry
+  when larger); round 5 hit watch (YOU / G tags, power, strength, credit, fall, YOU counters,
+  `sub_834EA6D0` result log); docs.
+**Files changed:** `include/rogue/addresses.h`, `src/rogue_hooks.cpp`, `src/rogue_mod.cpp`,
+`src/rogue_probe.cpp`, `include/rogue/probe.h`, `src/rogue_panel.cpp`, `docs/re-findings.md`,
+`docs/user-guide.md`, `docs/current-status.md`, `docs/handoff-log.md`.
+**Validation:** not compiled by the agent. No new .cpp: incremental build. First build with a
+real address defined: if `REX_FUNC` / `REX_EXTERN` complain, the hit contact block in
+rogue_hooks.cpp is the place to look (it uses literal names on purpose).
+**Proven:** hit contact + knockdown reaction (2 sessions, owner check).
+**Hypotheses / unresolved:** +0x38 human flag; `sub_834EA6D0` = human query; *r5 = hit power;
+`sub_83589B38` r7 = strength 0..3; skater class (one session).
+**Next action:** BUILD-9 + user-guide 4c (owner); then RE-2 decision and first event perk.
+
+### 2026-10-30 (17:45) - Hannah - Round 5: no human flag; claim your pro; round 6 power test
+**Objective:** Read round 5 (exhibition + BAP) and the reaction slice; unblock BAP counting.
+**Done:**
+- The 13:45 package compiled and ran (first build with a defined address).
+- Round 5: byte +0x38 never matched the owner's player; it is a reaction state on victims (read
+  after the reaction). My round 4 conclusion was wrong. `sub_834EA6D0` = team query.
+- Static read of `sub_83429560`: the reaction comes from `sub_833B9028(f1 = power)`, power from
+  `sub_833CA500`. Power (58 contacts): knockdowns 0.763-0.962, normal 0.501-0.734 (clean split near 0.75).
+- Interim RE-2: the owner claims his pro once per game from the latest contact (panel). With a
+  claim the contact hook counts the pro's hits / knockdowns of skaters (goalie class now
+  CONFIRMED and defined). Round 6: ME tags, all-player dumps at the claim (to find a real field),
+  hooks on the dispatcher and the reaction choice, opt-in power test for ME's hits.
+**Files changed:** `include/rogue/rogue_mod.h`, `src/rogue_mod.cpp`, `src/rogue_hooks.cpp`,
+`include/rogue/addresses.h`, `src/rogue_panel.cpp`, `src/rogue_probe.cpp`, `include/rogue/probe.h`,
+`docs/re-findings.md`, `docs/user-guide.md`, `docs/current-status.md`, `docs/handoff-log.md`.
+**Validation:** not compiled by the agent. No new .cpp: incremental build.
+**Proven:** goalie / skater class (3 sessions); +0x38 is not a human flag.
+**Hypotheses / unresolved:** player objects stay the same through one game (the claim relies on
+it); knockdown is chosen from power alone; the power test changes only the claimed player's hits
+(thread-local guard inside sub_83429560); sub_833B9028 may have other callers (logged).
+**Next action:** BUILD-10 + user-guide 4d (owner); RE-2 dump diff and RE-3 test read (agent).
+
+### 2026-10-30 (18:45) - Hannah - Power decides the hit; first event perks; checkpoint
+**Objective:** Read round 6 (BAP game with claim + power test) and the power slices; ship the
+first real perks and a checkpoint commit.
+**Done:**
+- Owner: claim worked; mod 27 hits / 13 knockdowns, knocked down 2x, game hit stat 5; power test
+  felt possibly stronger, nothing abnormal.
+- Log: the reaction choice table (0.5 / 0.75 thresholds) explains all 1836 decisions; the power
+  test changed the pro's outcomes exactly as predicted (table in re-findings.md results log).
+- Claim dumps: +0x22C byte 0x00 on the pro vs 0xFF on 20 others (candidate auto marker).
+- Package: dispatcher + choice hooks in rogue_hooks.cpp; Freight Train = kHitPowerBoost +15% per
+  stack (BAP pro only, replaces its global tunables); Wrecking Ball = normal hit -> knockdown;
+  round 7 AUTO marker test; addresses.h (3 CONFIRMED); docs; commit message for the checkpoint.
+- Owner design thoughts recorded as DES-3.
+**Files changed:** `include/rogue/addresses.h`, `include/rogue/perks.h`, `src/perk_catalog.cpp`,
+`src/rogue_hooks.cpp`, `src/rogue_probe.cpp`, `include/rogue/probe.h`, `src/rogue_panel.cpp`,
+`docs/re-findings.md`, `docs/user-guide.md`, `docs/current-status.md`, `docs/handoff-log.md`.
+**Validation:** not compiled by the agent. No new .cpp: incremental build.
+**Proven:** reaction dispatcher / choice / table; power raising works for one player.
+**Hypotheses / unresolved:** +0x22C marker; Wrecking Ball is Legendary and not in the starting
+unlock list (test it by adding `unlock=wrecking_ball` to rogue_meta.txt); the hit count includes
+hits on goalies; 00-START-HERE.md is stale.
+**Next action:** BUILD-11 + user-guide 4e (owner); RE-2 decision, DES-3 options (agent).

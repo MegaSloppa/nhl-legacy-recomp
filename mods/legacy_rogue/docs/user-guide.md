@@ -1,7 +1,7 @@
 # User guide (for Cherlyn)
 
 You do the parts that need your PC and the game. Agents do the code and the analysis.
-Last updated 2026-10-29 (morning).
+Last updated 2026-10-30 (Hannah).
 
 ## 1. Repo setup (done)
 
@@ -58,18 +58,25 @@ In game:
 Saves: `rogue_career.txt`, `rogue_meta.txt` next to the exe. Your real BAP save is never
 touched. Delete them to reset.
 
-**Known limit (2026-10-29):** perks that change engine settings (Cannon, Sniper Scope, Freight
-Train, Jet Skates, Iron Lungs, Captain's Aura, the curses) do not affect gameplay yet: they write
-the setting's type tag, not its value. Avoid them in real play until TUN-6 is done.
+**Perks today (2026-10-30):** setting perks (Cannon, Sniper Scope, Freight Train, Jet Skates, Iron
+Lungs, Captain's Aura, the curses) write the live value since TUN-6; the panel's **Active perk
+effects** readout shows it (verified). Only Cannon is confirmed to change gameplay, and every
+setting perk is GLOBAL: CPU players get it too. Event perks (crit knockdowns, shockwave) do
+nothing yet; hit detection works (RE-1) but the mod cannot tell which player is you until the
+round 6 claim (4d) is done in a BAP game; with a claim the mod counts your hits and knockdowns.
+
+**Event perks (2026-10-30):** Freight Train (+15% hit power per stack) and Wrecking Ball (every
+normal hit becomes a knockdown) act on YOUR hits only, in a BAP game, after you claim your pro
+("That was me"). Wrecking Ball is Legendary and not unlocked at the start; to test it, add the
+line `unlock=wrecking_ball` to `rogue_meta.txt` (game closed).
 
 **Smoke test (BUILD-3)** - PASSED 2026-10-29. Kept for re-testing after big changes:
 1. Career start: enter a name, click Start Legacy Rogue career. Perk Shop opens with a free pick.
    After you take it, the other offers show a Hype price (not FREE).
 2. FX: press Test FX: crit, then close the menu at once. Gold CRITICAL! + flash stays ~1 s.
-3. Perk applies: take Cannon (or any non-curse setting perk), press BAP game started. In Engine
-   Tunables search the perk's setting (Cannon: `gTweakByGameStyleSlapShotPowerLevel`): orange
-   (overridden) and 1 above stock. The index needs ~12 s after boot; wait and search again.
-4. Revert: press BAP game ended. The setting returns to stock.
+3. Perk applies: take Cannon (or any non-curse setting perk), press BAP game started, open
+   **Active perk effects (stock -> live)**: the perk's settings show `stock -> new value`.
+4. Revert: press BAP game ended. The readout is back to grey "(stock)".
 5. Saves: `rogue_career.txt` and `rogue_meta.txt` exist in `out\build\win-amd64-vk-ffx\`.
 On a crash upload the newest `out\build\win-amd64-vk-ffx\logs\nhllegacy_NNN.log`.
 
@@ -83,6 +90,13 @@ python mods\legacy_rogue\tools\find_bap_code.py "<path>\default.decompressed.exe
 Upload `bap_hits.txt`. Probe rounds (3 to 5): the agent sends a probe file plus a short
 script ("start a BAP game, make 3 big hits 10 s apart, quit"). Build, run with
 `set NHL_ROGUE_PROBE=1`, do the script, upload `rogue_probe.txt` from the exe folder.
+
+Static slices: agents may ask for a piece of the generated code. Run from the repo root and
+upload the .txt, e.g.
+```bat
+python mods\legacy_rogue\tools\slice_generated.py func sub_833E0BF8 > slice.txt
+```
+(`func`, `callers`, `callees`, `callsite NAME --context 40`, `offset 640 --float`).
 
 ### 4a. TUN-4 tunable probe (2026-10-29)
 
@@ -98,7 +112,7 @@ Finds where the engine really keeps a setting's value. Read-only; it never chang
    **Snapshot: after edit**. Wait for Done, then reset the setting.
 6. Quit and upload `out\build\win-amd64-vk-ffx\rogue_probe.txt`.
 
-### 4b. Perk readout + hit sweep (RE-1 round 3, 2026-10-29)
+### 4b. Perk readout + hit sweep (RE-1 round 3, 2026-10-29) - DONE 2026-10-30
 
 Incremental build is enough. Delete the old `rogue_probe.txt`.
 1. **Perk readout** (`run_dev.bat` is fine): start a career and take any setting perk (Cannon,
@@ -110,6 +124,51 @@ Incremental build is enough. Delete the old `rogue_probe.txt`.
    kind it was (light, big, boards, knockdown, hip check, you got hit). Ten or more landed checks
    is ideal; misses do not need a mark.
 3. Upload `rogue_probe.txt` and your numbered marks.
+
+### 4c. Hit watch: is YOU really you? (RE-1 / RE-2 round 5, 2026-10-30)
+
+Incremental build is enough (no new files). Delete the old `rogue_probe.txt`, launch
+`run_probe.bat`. Every body contact shows a line on screen: `HIT` or `KNOCKDOWN`, then
+`hitter -> victim`. **YOU** = the player the game marks as human-controlled (this is what is being
+tested), `G....` = a goalie, other players are a 4-digit tag. A knockdown on a goalie shows
+"(goalie shrugs)". One collision can show 2-3 lines (one per player who reacts): that is normal.
+1. **Exhibition:** play a few minutes and hit with different players. Check: does YOU always
+   follow the player you control at that moment (also right after you switch)? Does a hit on you
+   show `-> YOU`?
+2. **Be-A-Pro game** (if you can): YOU should be your pro every time, and never anyone else.
+3. Open the panel now and then: **Hit watch** shows "YOU so far: N hits, N knockdowns". At the
+   end of a period or game, compare the hit count with the game's own stats for your player /
+   team (box score). Write both numbers down. **Reset counts** starts again.
+4. Upload `rogue_probe.txt` and your notes (any wrong YOU, the two hit counts).
+
+### 4d. Claim your pro + power test (RE-2 / RE-3 round 6, 2026-10-30)
+
+Round 5 showed the game has no simple "this is you" byte where we looked, so for now you tell the
+mod which player is yours, once per game. Incremental build is enough. Delete the old
+`rogue_probe.txt`, launch `run_probe.bat`, start a Be-A-Pro game, click **BAP game started**.
+1. **Claim:** deliver a check with your pro, open the panel, click **That was me: I hit** (or,
+   right after taking a hit, **That was me: I got hit**). The Manual section then shows "Your pro:
+   ...." and the on-screen lines show **ME**. If ME is ever someone else, note it.
+2. **Counting:** play on. The Manual line "this game: N hits, N knockdowns" is the mod's own count
+   (goalies excluded from knockdowns). Before **BAP game ended**, write it down next to the
+   game's own hit stat for your pro. The Hits box is filled from the mod's count if it is larger.
+3. **Power test** (Hit watch section): pick **x1.3**, throw 5+ normal checks; then **x2**, 5+
+   more; then **off**. Lines marked "(boosted)" had their power raised. Do more of your hits
+   become KNOCKDOWNs? Anything odd (players flying, freezes)? The test only touches YOUR hits.
+4. Upload `rogue_probe.txt` and your notes (where ME was wrong, the two hit counts, what the
+   power test did).
+
+### 4e. AUTO marker + first perks (RE-2 round 7, 2026-10-30)
+
+Incremental build is enough. Delete the old `rogue_probe.txt`, launch `run_probe.bat`.
+1. **Exhibition** (no claim possible there): hit with different players and switch often. On
+   screen, **AUTO** should always be the player you control at that moment, and nobody else.
+2. **BAP game** with Freight Train owned: click **BAP game started**, claim your pro (4d). The tag
+   should read **ME*** (claim and AUTO agree). The panel line "AUTO marker vs claim" should only
+   grow in "agree". Play normally; your checks should floor people a bit more often (Freight
+   Train). Power test stays **off**.
+3. Optional: Wrecking Ball (see Event perks above): every hit you land should be a KNOCKDOWN.
+4. Upload `rogue_probe.txt` and your notes (any wrong AUTO, the counters, how the perk felt).
 
 ## 5. Starting a fresh agent session
 
@@ -124,6 +183,8 @@ Paste:
 ## 6. Decisions waiting on you
 
 - DES-1: win/loss structure. Options in `design.md` section 6 (recommended: A + B).
+- PARENT-1: how to tell the parent project that its Engine Tunables editor writes type tags
+  (issue or PR; an agent can draft it).
 
 ## 7. Troubleshooting: every setup problem hit so far
 
