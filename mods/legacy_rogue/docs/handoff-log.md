@@ -412,3 +412,29 @@ first real perks and a checkpoint commit.
 unlock list (test it by adding `unlock=wrecking_ball` to rogue_meta.txt); the hit count includes
 hits on goalies; 00-START-HERE.md is stale.
 **Next action:** BUILD-11 + user-guide 4e (owner); RE-2 decision, DES-3 options (agent).
+
+### 2026-10-31 - Shirley - RE-2 round 7 result + round 8 marker scan
+**Objective:** Read the round 7 log (owner: exhibition only, no AUTO seen) and prepare round 8.
+**Done:**
+- Round 7: AUTO never showed because the probe tested +0x22C == 0x00. At the claim only the
+  controlled player had a non-0xFF value (0x06); in contacts 0x06 moved between the owner's
+  skaters as he switched; CPU team and goalies always 0xFF. Revised hypothesis: != 0xFF = the
+  player a human controls (0x00 BAP, 0x06 exhibition). Power vs reaction table held again.
+- Round 8: AUTO = != 0xFF; once-a-second marker scan over all known players (`marker` /
+  `marker-sum` log lines, panel "Marker scan" counters); `ResetPlayers()` on BAP game started;
+  player table 64 -> 128.
+- BUILD-11 marked DONE (its content is commit 0290eb7).
+- Tooling: the GitHub connector returns file reads without content (commit diffs do come
+  through); this session edited the owner's local repo directly through a tunnel and built there.
+**Files changed:** `src/rogue_probe.cpp`, `include/rogue/probe.h`, `src/rogue_panel.cpp`,
+`docs/current-status.md`, `docs/re-findings.md`, `docs/user-guide.md` (4f), `docs/handoff-log.md`.
+**Validation:** `scripts\_build_vkffx_incr.bat` run by the agent on the owner's machine: PASS
+(rogue_panel.cpp + rogue_probe.cpp rebuilt, nhllegacy.exe linked; only the existing fopen/getenv
+deprecation warnings). Not run in game.
+**Proven:** round 7 facts above (owner log; the file holds round 6 BAP + round 7 exhibition).
+**Hypotheses / unresolved:** marker on the bench / at whistles / in intermissions. IsBapSkater's
+ROGUE_OFF_SKATER_CONTROLLER path tests equality with ROGUE_HUMAN_CONTROLLER_VALUE; switch it to
+"!= 0xFF" when RE-2 is confirmed. 00-START-HERE.md still stale. Parent scripts
+`_build_vkffx_incr.bat` / `_c5renderdoc.ps1` show line-ending-only changes in the working tree
+(not touched by the agent; restore with `git checkout -- scripts/<file>`).
+**Next action:** user-guide 4f (owner); RE-2 decision (agent).

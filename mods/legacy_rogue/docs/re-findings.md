@@ -14,7 +14,7 @@ CONFIRMED (behavior reproduced: e.g. forcing it changes the game as predicted, 2
 | ROGUE_VA_REACT_KNOCKDOWN | 0x83ABF598 = r6 of the hit contact on a knockdown reaction (normal hit 0x83ABF57C). Set by the caller (its r30); sub_833E0BF8 never reads r6 | CONFIRMED | Round 3: 3/3 knockdowns, 2/2 small hits. Round 4: 15 knockdown lines, owner: labels consistent. Goalies get it and do not fall | 2026-10-30 Hannah |
 | ROGUE_VA_SKATER_CLASS | first word of a player object: skater 0x82271C10, goalie 0x8223F648 (roster slots 18-19 / 38-39) | CONFIRMED | Round 4 dumps (32 + 2), round 5 player table in exhibition and BAP (every slot 18/19/38/39 is a goalie class, all others skater); goalie took a knockdown reaction without falling | 2026-10-30 Hannah |
 | ROGUE_OFF_SKATER_CONTROLLER | ? byte +0x38 REJECTED: it is a reaction / animation state (2..12 on victims after a reaction, 0 on hitters) | REJECTED | Round 5: never 2 on the owner's player; the two "YOU" knockdowns in BAP were other players. Interim: the owner claims his pro in the panel (rogue::SetBapPlayer); round 6 dumps all players at the claim | 2026-10-30 Hannah |
-| (candidate) BAP marker | byte +0x22C of the player object: 0x00 on the claimed player, 0xFF on all 20 others dumped (also unique to him: +0x040 = 1, +0x248 heap pointer vs 0x83B44474, +0x3D0 = 1) | CANDIDATE | round 6 claim dumps, one BAP session (21 players). Round 7 tests it live (AUTO tag vs claim) | 2026-10-30 Hannah |
+| (candidate) BAP marker | byte +0x22C of the player object: 0xFF on every player nobody controls; 0x00 on the pro in BAP (round 6, 21 players; also unique to him then: +0x040 = 1, +0x248 heap pointer vs 0x83B44474, +0x3D0 = 1), 0x06 on the controlled player in exhibition (round 7, 40 players at the claim; moved between the owner's skaters as he switched). Test: != 0xFF | CANDIDATE (OBSERVED in 2 modes) | round 6 + round 7 claim dumps and contact lines. Round 8 scans all players once a second in BAP | 2026-10-31 Shirley |
 | (offset) player index | byte +0x39 (57) of the player object: 0-19 / 20-39 by team; also at +0xAC | OBSERVED | sub_833E0BF8 passes it as an index (static); dumps show 0..0x27, goalie = 0x13 / 0x27; byte +0x30 = team side 0/1 | 2026-10-30 Hannah |
 | (data) team query | sub_834EA6D0(player, 0) -> 0 / 1 by TEAM (not human): exhibition idx 0-19 -> 0, 20-39 -> 1; BAP idx 0-19 -> 1, 20-39 -> 0 | OBSERVED | Round 5 result log, 2 sessions | 2026-10-30 Hannah |
 | ROGUE_ADDR_REACTION_DISPATCH | sub_83429560(r3 victim, r4 hitter): power = sub_833CA500(victim, hitter, ...); desc = sub_833B9028(f1 = power); state = sub_83429248(victim, desc+20) | CONFIRMED | static (reaction_slice.txt) + round 6 (1836 dispatches logged, all with lr 0x834295E0) | 2026-10-30 Hannah |
@@ -82,7 +82,7 @@ threshold floats in the table would change everyone's hits (global).
 | +0x38 | byte: reaction / animation state (2..12 right after a reaction), NOT a human flag | REJECTED round 5 |
 | +0x39 | byte: player index 0-39 (also +0xAC) | OBSERVED |
 | +0x60 | pointer to another object (a player in exhibition, a shared object in training) | - |
-| +0x22C | byte: 0x00 on the claimed BAP player, 0xFF on 20 others (round 6) | CANDIDATE |
+| +0x22C | byte: != 0xFF on the player a human controls (0x00 BAP, 0x06 exhibition), 0xFF on all others (rounds 6-7) | CANDIDATE |
 | +0x248 | pointer: heap object on the claimed player, 0x83B44474 on 19 of 20 others | CANDIDATE |
 | +564 (0x234) | per-player sub-object the hit contact updates | static |
 
@@ -167,6 +167,14 @@ Only ONE translation unit may override a given function: the hit contact lives i
 ## Results log
 
 (append newest first: date, agent, what was probed, what fired, conclusion)
+
+- 2026-10-31, Shirley: RE-2 round 7, exhibition only (owner, ~17 min; no BAP game). No AUTO tag
+  ever: the probe tested +0x22C == 0x00. Claim dump (40 players): claimed player A90C64C0 (idx 21,
+  team 1) = 0x06, the 39 others 0xFF. Contact lines: 0x06 only on team 1 skaters (the owner's
+  team), moving between them over time (e.g. idx 34 at 0x06, ~10 s later 0xFF); team 0 and all
+  goalies always 0xFF. Power vs reaction: 11 knockdowns 0.785-1.077, normal hits 0.501-0.750
+  (table holds). Conclusion: marker test = "!= 0xFF", the value differs by mode. Round 8 scans
+  every player once a second in BAP.
 
 - 2026-10-30, Hannah: round 6 (owner, 2 periods of a BAP game, 576 KB). Claim worked. Mod counted
   27 hits / 13 knockdowns for the pro (25 of 28 of his contacts boosted by the test); the game's

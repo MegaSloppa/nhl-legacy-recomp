@@ -1,7 +1,7 @@
 # User guide (for Cherlyn)
 
 You do the parts that need your PC and the game. Agents do the code and the analysis.
-Last updated 2026-10-30 (Hannah).
+Last updated 2026-10-31 (Shirley).
 
 ## 1. Repo setup (done)
 
@@ -158,7 +158,7 @@ mod which player is yours, once per game. Incremental build is enough. Delete th
 4. Upload `rogue_probe.txt` and your notes (where ME was wrong, the two hit counts, what the
    power test did).
 
-### 4e. AUTO marker + first perks (RE-2 round 7, 2026-10-30)
+### 4e. AUTO marker + first perks (RE-2 round 7, 2026-10-30) - exhibition part DONE 2026-10-31; BAP part moved to 4f
 
 Incremental build is enough. Delete the old `rogue_probe.txt`, launch `run_probe.bat`.
 1. **Exhibition** (no claim possible there): hit with different players and switch often. On
@@ -169,6 +169,23 @@ Incremental build is enough. Delete the old `rogue_probe.txt`, launch `run_probe
    Train). Power test stays **off**.
 3. Optional: Wrecking Ball (see Event perks above): every hit you land should be a KNOCKDOWN.
 4. Upload `rogue_probe.txt` and your notes (any wrong AUTO, the counters, how the perk felt).
+
+### 4f. Marker in Be-A-Pro (RE-2 round 8, 2026-10-31)
+
+Incremental build is enough (no new files). Delete the old `rogue_probe.txt`, launch
+`run_probe.bat`. No exhibition this time: there you switch players, so the marker moves on purpose.
+1. Start a BAP game. Once it has loaded, click **BAP game started** (it now also clears the
+   probe's player list).
+2. Claim your pro (4d). Your lines should read **ME*** (claim and marker agree). **AUTO** on
+   anyone else: note roughly when (game clock) and what was happening.
+3. Play at least one full period: bench shifts, whistles / faceoffs and an intermission.
+   Freight Train owned is fine; power test **off**.
+4. Hit watch panel, line **Marker scan**: ideally "several" stays 0 and "one (ME)" is close to
+   "one". At each period end write the line down, and note whether "none" grows while you sit on
+   the bench.
+5. Optional but useful: a second BAP game (repeat 1-4). Two clean games and the claim becomes
+   automatic.
+6. Upload `rogue_probe.txt` and your notes.
 
 ## 5. Starting a fresh agent session
 

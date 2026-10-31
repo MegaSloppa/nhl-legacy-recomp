@@ -37,6 +37,7 @@
 #include <cstring>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <rex/filesystem.h>
@@ -485,7 +486,12 @@ void CatalogAsync() {
   std::thread([] { CatalogWorker(); }).detach();
 }
 
-// ---------------------------------------------------------------- RE-1 hit watch (round 7)
+// ---------------------------------------------------------------- RE-1 hit watch (round 8)
+// Round 7 RESULT (owner exhibition, 2026-10-31): no AUTO tag ever, because the test was == 0x00.
+// At the claim, byte +0x22C was 0x06 on the claimed (controlled) player and 0xFF on the 39 others;
+// across contacts 0x06 showed only on the owner's team's skaters and moved as he switched players.
+// HYPOTHESIS: != 0xFF = the player a human controls right now (0x00 in BAP round 6, 0x06 in
+// exhibition). Round 8: AUTO = byte != 0xFF, plus a once-a-second marker scan (MarkerScan).
 // Round 6 RESULT (owner BAP game, 2026-10-30): the claim works; the power test is deterministic:
 // sub_833B9028 walks a 5-entry table at 0x83ABF528 (28 bytes each, threshold float at +4) and
 // returns the first entry whose threshold >= power: <= 0.5 entry 0 (0x83ABF528, no hit
@@ -521,12 +527,12 @@ constexpr uint32_t kClassSkater = 0x82271C10u;     // CONFIRMED rounds 4-5
 constexpr uint32_t kClassGoalie = 0x8223F648u;     // CONFIRMED rounds 4-5
 constexpr uint32_t kOffIndex = 0x39;               // player index byte (sub_833E0BF8 reads +57)
 constexpr uint32_t kOffTeam = 0x30;                // team side byte (round 4 dumps)
-constexpr uint32_t kOffAuto = 0x22C;               // CANDIDATE: byte 0x00 = BAP / human player, 0xFF = AI
+constexpr uint32_t kOffAuto = 0x22C;               // CANDIDATE (round 7): byte != 0xFF = player a human controls
 constexpr unsigned long kLinkMs = 1500;            // strength / credit / fall within this
 constexpr unsigned long kSameHitMs = 500;          // same victim again = same hit
 constexpr int kMaxEvents = 12;
 constexpr int kLinesPerSec = 40;
-constexpr int kMaxPlayers = 64;
+constexpr int kMaxPlayers = 128;  // round 8: room for 2+ games per session
 constexpr int kDumpBytes = 1024;
 
 std::atomic<unsigned> g_hook_calls[kNumHooks];
@@ -557,15 +563,18 @@ void HookLog(const char* line) {
   if (FILE* f = std::fopen(path.string().c_str(), "a")) { std::fputs(line, f); std::fclose(f); }
 }
 
+void MarkerScan();  // round 8, defined after Name()
+
 void StartFlusher() {
   bool expected = false;
   if (!g_flusher.compare_exchange_strong(expected, true)) return;
-  HookLog("hitwatch v4 (RE-1 round 7) started\n");
+  HookLog("hitwatch v5 (RE-1 round 8) started\n");
   std::thread([] {
     unsigned last[kNumHooks] = {};
     char buf[512];
     for (;;) {
       std::this_thread::sleep_for(std::chrono::seconds(1));
+      MarkerScan();  // round 8
       int w = std::snprintf(buf, sizeof(buf), "hooks tick=%lu", (unsigned long)GetTickCount());
       bool any = false;
       for (int i = 0; i < kNumHooks; ++i) {
@@ -595,7 +604,7 @@ bool Budget(int i) {
 struct PlayerInfo {
   uint32_t cls = 0; int index = -1; int team = -1;
   int auto_byte = -1; uint32_t w040 = 0, w248 = 0, w3d0 = 0;
-  bool Auto() const { return auto_byte == 0; }
+  bool Auto() const { return auto_byte >= 0 && auto_byte != 0xFF; }
 };
 PlayerInfo ReadPlayer(uint32_t va) {
   PlayerInfo p;
@@ -619,6 +628,70 @@ void Name(char* out, size_t n, uint32_t va, const PlayerInfo& p) {
   else if (p.Auto()) std::snprintf(out, n, "AUTO");
   else if (p.cls == kClassGoalie) std::snprintf(out, n, "G%04X", unsigned(va & 0xFFFFu));
   else std::snprintf(out, n, "%04X", unsigned(va & 0xFFFFu));
+}
+
+// Round 8 (RE-2): once a second (flusher thread) read byte +0x22C of every known player object and
+// list the ones that carry the marker (!= 0xFF). A "marker" line is logged whenever that set
+// changes, a "marker-sum" line every 60 scanned seconds, and per-second counters go to the panel.
+// Only objects whose class pointer is skater / goalie are read (old objects from an earlier game
+// in the same session are skipped once their memory is reused; BAP game started clears the list).
+std::vector<std::pair<uint32_t, int>> g_mk_sig;  // flusher thread only
+void MarkerScan() {
+  PlayerEntry copy[kMaxPlayers];
+  int n;
+  {
+    std::lock_guard<std::mutex> lk(g_pl_mu);
+    n = g_pl_n;
+    std::memcpy(copy, g_pl, sizeof(PlayerEntry) * size_t(n));
+  }
+  if (!n) return;
+  const uint32_t me = rogue::BapPlayer();
+  std::vector<std::pair<uint32_t, int>> sig;
+  char list[1024];
+  int w = 0;
+  list[0] = 0;
+  uint32_t first = 0;
+  int first_val = -1, first_idx = -1;
+  for (int k = 0; k < n; ++k) {
+    const PlayerInfo p = ReadPlayer(copy[k].player);
+    if (p.cls != kClassSkater && p.cls != kClassGoalie) continue;
+    if (!p.Auto()) continue;
+    sig.push_back({copy[k].player, p.auto_byte});
+    if (!first) { first = copy[k].player; first_val = p.auto_byte; first_idx = p.index; }
+    if (w < int(sizeof(list)) - 64)
+      w += std::snprintf(list + w, sizeof(list) - w, " %08X/idx%d/team%d/v%02X%s", copy[k].player,
+                         p.index, p.team, unsigned(p.auto_byte), copy[k].player == me ? "/ME" : "");
+  }
+  const int count = int(sig.size());
+  const bool changed = sig != g_mk_sig;
+  YouStats y;
+  {
+    std::lock_guard<std::mutex> lk(g_ev_mu);
+    ++g_you.mk_secs;
+    if (count == 0) ++g_you.mk_none;
+    else if (count == 1) { ++g_you.mk_one; if (me && first == me) ++g_you.mk_one_me; }
+    else ++g_you.mk_many;
+    if (changed) ++g_you.mk_changes;
+    g_you.mk_count = count;
+    g_you.mk_player = first;
+    g_you.mk_value = first_val;
+    g_you.mk_index = first_idx;
+    y = g_you;
+  }
+  char buf[1200];
+  if (changed) {
+    std::snprintf(buf, sizeof(buf), "marker tick=%lu n=%d players=%d me=%08X%s\n",
+                  (unsigned long)GetTickCount(), count, n, me, list);
+    HookLog(buf);
+    g_mk_sig = sig;
+  }
+  if (y.mk_secs % 60 == 0) {
+    std::snprintf(buf, sizeof(buf),
+                  "marker-sum tick=%lu secs=%d none=%d one=%d one_me=%d many=%d changes=%d me=%08X\n",
+                  (unsigned long)GetTickCount(), y.mk_secs, y.mk_none, y.mk_one, y.mk_one_me,
+                  y.mk_many, y.mk_changes, me);
+    HookLog(buf);
+  }
 }
 
 // Newest contact within kLinkMs for the pair (any pair if any_pair). Caller holds g_ev_mu.
@@ -846,6 +919,17 @@ void DumpPlayersForClaim(uint32_t me) {
   DumpObject("me", me);
   for (int k = 0; k < n; ++k)
     if (copy[k].player != me) DumpObject("other", copy[k].player);
+}
+
+// Round 8: forget every collected player object. Called by the panel's BAP game started, so
+// objects from an earlier game in the same session never reach the marker scan. The team query
+// refills the list within a second.
+void ResetPlayers() {
+  {
+    std::lock_guard<std::mutex> lk(g_pl_mu);
+    g_pl_n = 0;
+  }
+  if (Enabled()) HookLog("players reset\n");
 }
 
 int HitEventCount() {

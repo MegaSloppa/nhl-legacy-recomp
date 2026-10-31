@@ -38,7 +38,7 @@ struct HitEvent {
   bool hitter_me = false, victim_me = false;
   bool hitter_goalie = false, victim_goalie = false;
   bool boosted = false;      // the power test changed this reaction
-  bool hitter_auto = false, victim_auto = false;  // byte +0x22C == 0 (CANDIDATE BAP marker)
+  bool hitter_auto = false, victim_auto = false;  // byte +0x22C != 0xFF (CANDIDATE: player a human controls)
   int strength = -1;         // r7 of sub_83589B38 for the same pair within 1.5 s
   bool credited = false;     // sub_8357F9A0 ran for the same pair within 1.5 s
   bool fall = false;         // sub_829380A0 ran within 1.5 s
@@ -49,11 +49,19 @@ bool HitEventGet(int i, HitEvent* out);  // i = 0 is the newest
 // What the probe counts for the claimed player (ME).
 struct YouStats {
   int hits = 0, knockdowns = 0, knocked_down = 0;
-  // Auto marker (+0x22C == 0) vs the claim, per player of each contact (round 7):
+  // Auto marker (+0x22C != 0xFF) vs the claim, per player of each contact (round 7):
   int auto_agree = 0;   // ME and marked
   int auto_missed = 0;  // ME but not marked
   int auto_wrong = 0;   // marked but not ME
   int auto_seen = 0;    // contacts with a marked player and no claim (exhibition)
+  // Marker scan (round 8), once a second over every known player object:
+  int mk_secs = 0;                            // seconds scanned
+  int mk_none = 0, mk_one = 0, mk_many = 0;   // seconds with 0 / exactly 1 / 2+ marked players
+  int mk_one_me = 0;                          // seconds with exactly 1 marked player and it is ME
+  int mk_changes = 0;                         // times the marked set changed
+  int mk_count = 0;                           // marked players at the last scan
+  uint32_t mk_player = 0;                     // first marked player at the last scan
+  int mk_value = -1, mk_index = -1;           // its +0x22C byte and player index
 };
 YouStats YouCounts();
 void YouReset();
@@ -66,6 +74,8 @@ void SetPowerTest(float factor);
 float PowerTest();
 // After a claim: dump ME and every other player object once (RE-2).
 void DumpPlayersForClaim(uint32_t me);
+// Round 8: clear the collected player list (start of a game). Refilled by the team query.
+void ResetPlayers();
 // Used by the guest hooks (rogue_probe.cpp bottom, rogue_hooks.cpp reaction hooks).
 void TeamQueryResult(uint32_t player, uint32_t arg, uint32_t result, unsigned long long lr);
 void ReactionBegin(uint32_t victim, uint32_t hitter);

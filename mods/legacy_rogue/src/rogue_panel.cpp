@@ -69,7 +69,7 @@ void PlayerTag(char* out, size_t n, uint32_t va, bool me, bool goalie, bool auto
   else std::snprintf(out, n, "%04X", unsigned(va & 0xFFFFu));
 }
 void DrawHitWatch() {
-  ImGui::SeparatorText("Hit watch (RE-1 round 7)");
+  ImGui::SeparatorText("Hit watch (RE-1 round 8)");
   ImGui::TextWrapped("Every body contact shows on screen as hitter -> victim. ME = the player you "
                      "claimed (Manual section: That was me). AUTO = the automatic marker being tested; ME* = "
                      "both agree. G = goalie.");
@@ -81,6 +81,16 @@ void DrawHitWatch() {
   ImGui::Text("AUTO marker vs claim: agree %d, missed you %d, marked someone else %d  |  "
               "no claim: %d contacts with an AUTO player", y.auto_agree, y.auto_missed,
               y.auto_wrong, y.auto_seen);
+  if (y.mk_secs) {
+    char now_s[64] = "";
+    if (y.mk_count)
+      std::snprintf(now_s, sizeof(now_s), ", first idx %d value %02X%s", y.mk_index,
+                    unsigned(y.mk_value) & 0xFFu,
+                    y.mk_player && y.mk_player == BapPlayer() ? " (ME)" : "");
+    ImGui::Text("Marker scan, %d s: none %d, one %d (ME %d), several %d, changes %d  |  now %d marked%s",
+                y.mk_secs, y.mk_none, y.mk_one, y.mk_one_me, y.mk_many, y.mk_changes, y.mk_count,
+                now_s);
+  }
   ImGui::TextUnformatted("Power test (ME's hits only):");
   const float k = probe::PowerTest();
   const float opts[] = {1.f, 1.15f, 1.3f, 2.f};
@@ -217,7 +227,10 @@ void DrawPanel() {
   }
 
   ImGui::SeparatorText("Manual (until lifecycle/stat hooks are mapped)");
-  if (ImGui::Button("BAP game started")) OnBapGameStart();
+  if (ImGui::Button("BAP game started")) {
+    OnBapGameStart();
+    probe::ResetPlayers();  // round 8: no player objects from an earlier game
+  }
   // RE-2 is not solved: you tell the mod which player is yours, once per game. During the game,
   // right after a check: "I hit" if your pro delivered the latest contact, "I got hit" if he took it.
   ImGui::BeginDisabled(!InBapGame());

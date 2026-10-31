@@ -1,6 +1,6 @@
 # Current status (AUTHORITATIVE)
 
-Last updated: 2026-10-30 (18:45) by Hannah (monday.com agent). If this disagrees with another doc,
+Last updated: 2026-10-31 (18:20) by Shirley (monday.com agent). If this disagrees with another doc,
 this wins; fix the other doc.
 
 ## Baseline
@@ -31,6 +31,31 @@ this wins; fix the other doc.
   Every setup problem hit so far and its fix: `user-guide.md` section 7.
 - GitHub: agents can READ the fork but writes fail from the agent's connection. Deliver changes
   as a zip of changed files only (00-START-HERE rule 12).
+
+## Checkpoint 2026-10-31 (18:20)
+
+Committed on GitHub: up to 0290eb7 (the 2026-10-30 18:45 checkpoint, BUILD-11). The owner ran the
+exhibition part of round 7. This session the agent edited the owner's local repo directly (tunnel)
+and ran the incremental build there; not committed yet. Round 8, no new .cpp:
+- `src/rogue_probe.cpp`, `include/rogue/probe.h`: AUTO = byte +0x22C != 0xFF (was == 0x00);
+  once-a-second marker scan over every known player (`marker` log line on every change,
+  `marker-sum` every 60 s, panel counters); `ResetPlayers()`; player table 64 -> 128.
+- `src/rogue_panel.cpp`: "Marker scan" line in the hit watch; BAP game started also clears the
+  probe's player list.
+- Docs: re-findings.md, user-guide.md (4f), this file, handoff-log.md.
+Still stale: `00-START-HERE.md` file map / mechanism table.
+
+## Key finding 2026-10-31 (round 7, exhibition): the marker is "not 0xFF", not "0x00"
+
+- No AUTO tag appeared because the probe required +0x22C == 0x00 (the BAP value from round 6).
+- At the claim (40 players dumped) only the claimed, controlled player had a value other than
+  0xFF: 0x06. All 39 others, both teams' goalies included, were 0xFF.
+- In the contact lines 0x06 appeared only on skaters of the owner's team (team 1) and moved
+  between them as he switched players; the CPU team was always 0xFF.
+- HYPOTHESIS: +0x22C != 0xFF = the player a human controls right now (value depends on the mode:
+  0x00 BAP, 0x06 exhibition). In BAP you cannot switch, so it should stay on the pro. Unknown:
+  bench, whistles, intermissions. Round 8 (user-guide 4f) answers them.
+- Power vs reaction held again: 11 knockdowns 0.785-1.077, normal hits 0.501-0.750.
 
 ## Checkpoint 2026-10-30 (18:45)
 
@@ -138,7 +163,8 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 | BUILD-8 | Build the 2026-10-30 hit watch package (incremental) | U | DONE 2026-10-30 (round 4 ran) |
 | BUILD-9 | Build the 2026-10-30 13:45 package (hit contact hook + round 5 hit watch, incremental) | U | DONE 2026-10-30 (round 5 ran) |
 | BUILD-10 | Build the 2026-10-30 17:45 package (claim + round 6, incremental) | U | DONE 2026-10-30 (round 6 ran) |
-| BUILD-11 | Build the 2026-10-30 18:45 checkpoint (first event perks + round 7), commit + push | U | TODO |
+| BUILD-11 | Build the 2026-10-30 18:45 checkpoint (first event perks + round 7), commit + push | U | DONE 2026-10-30 (0290eb7); round 7 exhibition part ran 2026-10-31 |
+| BUILD-12 | Round 8 marker scan (edited in the local repo by the agent, 2026-10-31): incremental build, run user-guide 4f, commit + push | A+U | ACTIVE: edits applied, incremental build PASSED 2026-10-31 (agent, `_build_vkffx_incr.bat`; only the existing fopen/getenv warnings). Owner: 4f run, commit + push |
 | PARENT-1 | Tell the parent project: its Engine Tunables editor / `ITunableStore` writes record+8 (the type tag) instead of the live value N+32 (+ heap copy H+36); its `gDekeRatEffect` sanity value comes from the registration pool. Evidence: re-findings.md. Owner decides how to report (issue / PR) | Owner (agent drafts) | TODO |
 
 ### Bugs
@@ -168,7 +194,7 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 |---|---|---|---|
 | RE-0 | Run `tools/find_bap_code.py` on the decompressed image, upload report | U | TODO (low; the sweep approach works better) |
 | RE-1 | Check resolution (hitter/hittee) | A+U | DONE 2026-10-30 for detection: hit contact `sub_833E0BF8` (r3 victim, r4 hitter) + knockdown reaction 0x83ABF598 CONFIRMED (rounds 3-4), in addresses.h. Changing hit outcomes needs the decision point: RE-3 / CHECK_RESOLVE (`sub_83429560`) |
-| RE-2 | Identify the BAP-controlled skater | A+U | ACTIVE. Interim claim works (round 6). Candidate +0x22C byte (0x00 pro / 0xFF others, one session). Round 7: AUTO tag + agreement counters in exhibition (should follow the player you control) and BAP (should always be your pro). Two clean sessions -> CONFIRMED -> claim becomes automatic |
+| RE-2 | Identify the BAP-controlled skater | A+U | ACTIVE. Interim claim works (round 6). Marker byte +0x22C: 0x00 on the pro in BAP (round 6), 0x06 on the controlled player in exhibition, 0xFF on everyone else (round 7), so the test is now != 0xFF. Round 8 (user-guide 4f): BAP game(s) with the marker scan. Two clean BAP games -> CONFIRMED -> automatic claim |
 | RE-3 | Knockdown: fall entry point or skater balance offset | A+U | DONE 2026-10-30 for hit outcomes: power -> reaction table (CONFIRMED), Freight Train / Wrecking Ball built on it. A force-fall for non-contact effects (Shockwave on nearby players, crit slap) is still open: lead `sub_83429560` called for another victim |
 | RE-4 | Puck-vs-skater contact | A+U | TODO |
 | RE-5 | BAP game start / end + final score + BAP player's stat line | A+U | TODO: the PE_* handlers never run. Next lead: post-game screens / XP award code |
@@ -197,11 +223,14 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 
 ## Recommended next action
 
-1. Owner: BUILD-11 (unzip, incremental build, commit with the message from the session, push).
-2. Owner: user-guide 4e: exhibition (does AUTO follow the controlled player?), then a BAP game
-   with Freight Train (claim, play, compare AUTO with ME). Upload `rogue_probe.txt` + notes.
-3. Agent: RE-2 decision from the AUTO counters (auto claim if clean), then DES-3 options in
-   design.md, then refresh 00-START-HERE.md (mechanisms now include confirmed hooks).
+1. Owner: commit + push the round 8 working-tree changes (BUILD-12; already built).
+2. Owner: user-guide 4f: one or two BAP games with the marker scan (claim your pro, play through
+   bench shifts, whistles and an intermission). Upload `rogue_probe.txt` + the "Marker scan"
+   line at each period end.
+3. Agent: RE-2 decision from the marker log. If clean: define ROGUE_OFF_SKATER_CONTROLLER 0x22C,
+   change IsBapSkater (rogue_hooks.cpp) from "== ROGUE_HUMAN_CONTROLLER_VALUE" to "!= 0xFF",
+   claim automatically, keep the manual claim as an override. Then DES-3 options in design.md,
+   then refresh 00-START-HERE.md.
 4. Next RE for more perks: puck-vs-body (RE-4, crit slap), a force-fall entry (Shockwave), BAP
    game start / end (RE-5) so the Manual buttons can go.
 
