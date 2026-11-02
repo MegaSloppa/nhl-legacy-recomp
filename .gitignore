@@ -78,3 +78,4 @@ build_dev.bat
 codegen_log.txt
 game_build_log.txt
 modded_game_build_log.txt
+.mcp-state/

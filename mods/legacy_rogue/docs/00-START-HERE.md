@@ -87,7 +87,8 @@ mods/legacy_rogue/
     probe.h                     diagnostics: snapshots, catalog (TUN-9), write tests, RE-1 hooks
     tweak_index.h               live tweak object index by name (N+32 + heap copy); perk write path
   src/                          implementations; rogue_hooks.cpp = guest hooks,
-                                rogue_probe.cpp = diagnostics (NHL_ROGUE_PROBE=1)
+                                rogue_probe.cpp = diagnostics (NHL_ROGUE_PROBE=1),
+                                rogue_static_probe.cpp = static-map probe S1 (rogue_probe_s.txt)
   tools/find_bap_code.py        string/tunable anchor -> function cross-ref
   tools/perk_candidates.py      tunable search by theme
   tools/find_tweak_consumers.py static readers of tweak objects (TUN-8/9)

@@ -26,6 +26,26 @@ CONFIRMED (behavior reproduced: e.g. forcing it changes the game as predicted, 2
 | ROGUE_ADDR_BAP_GAME_START / END | ? | - | - | - |
 | (layout, no address) Tweak object value | name-pointer address N: tag N+8, N+20 (reset value?), min N+24, max N+28, LIVE VALUE N+32 (CONFIRMED TUN-5b), heap copy ptr N+36 (copy: tag +0, name +4, value +24) | CONFIRMED (value N+32) | TUN-4 layout; TUN-8 readers load N+32; TUN-5b: writing N+32 + H+36 changes slap shot power and LOD immediately | 2026-10-29 Victoria |
 
+## Static candidates (Amy, 2026-11-02; details in docs/static/static-map.md)
+
+All CANDIDATE (static read only). Probe round S1 (user-guide 4g) tests them; promote a row here
+only with log evidence. Reaction table entry names (image strings): 0 incidental, 1 nudge,
+2 stumble, 3 stumble fall (= "normal hit" above, 0x83ABF57C), 4 fall (= "knockdown", 0x83ABF598).
+
+| Key (proposed) | Address / offset | Confidence | Static evidence (static-map.md section) |
+|---|---|---|---|
+| ROGUE_VA_BAP_PLAYER_PTR | 0x83C876D4 | CANDIDATE | cache filled by `sub_834DC8A8`, gated by BAP flag 0x83AC5F63 and match 0x83C1E89C (7) |
+| (game state) | word 0x83C1D220, switch `sub_8330C890`, table 0x83AA5B20 | CANDIDATE | 14 named states (9) |
+| ROGUE_ADDR_BAP_GAME_END | state DONE (9) via `sub_8330C890` | CANDIDATE | (9) |
+| ROGUE_ADDR_GOAL_SCORED | `sub_83480248` (r3 scorer, r4 assister) | CANDIDATE | posts Goal / GoalAwarded (6) |
+| ROGUE_ADDR_PERIOD_END | `sub_8331F408` | CANDIDATE | posts EndPeriod, one caller (7) |
+| (period) | word 0x83C876B8 | CANDIDATE | (8) |
+| ROGUE_ADDR_PUCK_BODY_HIT | `sub_83328180` (r3 puck, r4 victim, r5 code; puck+180 last touch) | CANDIDATE | posts PuckHitPlayer / BlockShot (7) |
+| (penalty decide / apply) | `sub_83487DC0` / `sub_83485BD0` | CANDIDATE | (10) |
+| (ratings) | raw +1240 + 4 * id, effective `sub_83501A68(player, id)` | CANDIDATE | (12, 13) |
+| (energy / injury) | player +360 energy, +368 injury pointer | CANDIDATE | (11, 13) |
+| (players) | 0x83C1D080 players[team * 20 + slot] | CANDIDATE | (8) |
+
 ## Hit contact sub_833E0BF8 (static read, hit_slices.txt, 2026-10-30)
 
 - Saves r3 (victim) in r29, r4 (hitter) in r31, r5 (float*) in r27, r7 in r25, r8 (float*) in r26.

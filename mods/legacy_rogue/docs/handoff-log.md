@@ -460,3 +460,29 @@ reaction names are literal image strings.
 **Hypotheses / unresolved:** everything else in static-map.md is CANDIDATE (static only). The event
 post function address is runtime-only. 0x83C1D278 vs 0x83C1D080 player tables: relation unknown.
 **Next action:** RE-10 penalty slices (owner), then RE-11 player object / physics.
+
+### 2026-11-02 (19:45) - Amy - Penalties, player object, ratings; probe round S1 written
+**Objective:** Continue the static map (owner: no game runs this session) and leave the next probe
+round ready.
+**Done:**
+- RE-10 static: decide `sub_83487DC0` (rec +4 offender, +8 victim, +12 type; random(1000) vs chance
+  from `sub_834859E0` x `sub_83476288`), assess `sub_83487CC0`, apply `sub_83485BD0` (every penalty).
+- RE-11 static: skater object 1968 bytes (`sub_834006B8` / `sub_83511CC8`), energy +360, injury
+  pointer +368, raw ratings +1240 + 4 * id, effective rating `sub_83501A68` (curve table 36..99,
+  difficulty column, wrong-stick multipliers), rating id map (section 13), injury classes.
+- Fall trigger: three leads rejected (score records / pose code); still open.
+- `src/rogue_static_probe.cpp` (PROBE-S1): read-only pass-through hooks on the state switch, goal,
+  period end, puck contact, penalty decide / apply and the event manager getter, plus a 1 s sampler
+  of the BAP player cache, state, period, ratings, energy, and a one-time GameEvent slot dump.
+  Log `rogue_probe_s.txt`. user-guide 4g. AGENTS.md / user-guide section 5: upload workflow.
+- static-map.md section 14: method, how to read the probe log, static queue, perk hook catalog.
+**Files changed:** `src/rogue_static_probe.cpp` (new), `CMakeLists.txt`, `docs/static/static-map.md`,
+`docs/current-status.md`, `docs/handoff-log.md`, `docs/re-findings.md` (static candidates table),
+`docs/user-guide.md` (4g, section 5), `docs/00-START-HERE.md`, `AGENTS.md`.
+**Validation:** probe syntax-checked with g++ -std=c++20 -Wall -Wextra -Wformat=2 against stub
+headers (PASS); NOT compiled against the SDK. No hooked function is overridden elsewhere (grep of
+every .cpp/.h in the repo zip).
+**Proven:** nothing new at runtime; image strings (state / reaction names) are literal.
+**Hypotheses / unresolved:** all static-map.md entries are CANDIDATE; event post address is
+runtime-only; force-fall reader unknown; rating ids 0-2 order, 16, 21, 24-28.
+**Next action:** BUILD-13 + user-guide 4g / 4f (owner); then log analysis per static-map.md 14.2.

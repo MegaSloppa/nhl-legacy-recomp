@@ -11,6 +11,9 @@ in this order, before doing anything:
 3. `docs/handoff-log.md` - read the LAST 2 entries only.
 4. Whatever doc the task you pick points to (`design.md`, `re-findings.md`).
 
+If the repo arrived as an uploaded zip (GitHub file reads return no content), static analysis
+runs through uploads: read `docs/static/static-map.md` section 14 for the method and the queue.
+
 Before you stop (even mid-task): update `current-status.md` and append a `handoff-log.md`
 entry using the template there. If you skip this, the next agent repeats your work.
 

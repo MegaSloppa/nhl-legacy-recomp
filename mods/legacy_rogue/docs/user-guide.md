@@ -187,6 +187,30 @@ Incremental build is enough (no new files). Delete the old `rogue_probe.txt`, la
    automatic.
 6. Upload `rogue_probe.txt` and your notes.
 
+### 4g. Static-map probe S1 (task PROBE-S1, written 2026-11-02 by Amy)
+
+Checks the static-analysis candidates (docs/static/static-map.md section 14) in one session. It
+only reads and logs; it never changes the game. It can run in the SAME session as 4f.
+
+**Build: a new .cpp was added, so use `scripts\_game_ffx_build.bat` (not the incremental build).**
+The agent only syntax-checked it against stub headers; if it does not compile, upload the error.
+
+1. Delete old `rogue_probe.txt` and `rogue_probe_s.txt` in `out\build\win-amd64-vk-ffx\`.
+   Launch `run_probe.bat` (NHL_ROGUE=1 + NHL_ROGUE_PROBE=1, same as 4a).
+2. Start a **Be-A-Pro game**. Click **BAP game started**, then claim your pro (4d) as usual.
+3. Play one full period or more and try to get, and note the game clock of:
+   - a **goal** (who scored / assisted: you, a teammate, the other team),
+   - a **penalty** on you and one on someone else (a hook / trip / boarding is fine),
+   - a **shot block** or the puck hitting you,
+   - a **whistle -> faceoff**, a **bench shift**, an **intermission**,
+   - optional: a **fight**, and **finishing the game** (game over / DONE).
+4. Also play 1-2 minutes of an **exhibition** game (not BAP), so we see the logs with BAP off.
+5. Upload `rogue_probe_s.txt` (and `rogue_probe.txt` if you also did 4f) plus your notes.
+
+What the agent looks for: `cache==claim:yes` in `sample` lines (RE-2), the `state` lines in
+order, `goal` / `pen-*` lines whose `who=` tags match your notes, one `event-manager` line with
+the post function, and one `slots begin` block.
+
 ## 5. Starting a fresh agent session
 
 Paste:
@@ -196,6 +220,13 @@ Paste:
 > task <ID> from docs/current-status.md. Attached: <files>. Before finishing, update
 > current-status.md and handoff-log.md and give me a zip of only the changed files, laid out
 > from the repo root.
+
+Upload-based workflow (when the agent cannot read GitHub files): zip the repo
+(`git archive -o repo.zip HEAD`), convert it to text (PowerShell:
+`[Convert]::ToBase64String([IO.File]::ReadAllBytes("$PWD\repo.zip")) | Set-Content -NoNewline repo.b64.txt`)
+and upload `repo.b64.txt`. Generated code goes up in pieces: the agent asks for slices
+(`tools/slice_generated.py`), the whole-program index (`tools/index_generated.py`) or image reads
+(`tools/read_image.py`); the method is in docs/static/static-map.md section 14.
 
 ## 6. Decisions waiting on you
 

@@ -344,11 +344,269 @@ in the image (round 6 measured ~0.5 / ~0.75 at runtime, so the game fills it at 
 0 `incidental`, 1 `nudge`, 2 `stumble`, 3 `stumble fall` (0x83ABF57C, the mod's "normal hit"),
 4 `fall` (0x83ABF598, the mod's "knockdown"). re-findings.md should adopt these names.
 
-## 10. Proposed probe round (when the owner tests again)
+## 10. Round S5: penalty decisions (RE-10, slices_s5.txt, 2026-11-02, Amy)
 
-Most of the earlier probe plan is now a read, not a hook:
-1. Read 0x83C876D4 once a second in BAP (+ byte 0x83AC5F63, match pointer 0x83C1E89C); compare
-   with the claimed pro and +0x22C. If it matches, RE-2 is done without hooks.
-2. Hooks on `sub_8331F408` (period end), `sub_83326280` (log r3 reason + flow +52 after), `sub_83480248`
-   (goal r3/r4), `sub_83328180` (r3/r4/r5): owner notes events, agent matches times.
-3. Optional: log `*(*(sub_82FEC310())+4)` once to get the event post function.
+All STATIC (CANDIDATE). Tunable names from tunable_readers.tsv (value read at object base + 40 = N+32).
+
+### Call pattern (all 9 contact sites: checks, stick checks, slash/hook, boardplay)
+```
+official = sub_8346F7E8();
+if (sub_83487DC0(official, r4 = &infraction, r5 = &contact))   // DECIDE: roll the dice
+    sub_83487CC0(official, &infraction, &contact);           // ASSESS: severity, then call / delay
+```
+Infraction record (r4): **+4 = offender player**, **+8 = victim player**, +12 = penalty type (0..11).
+Contact record (r5): +56 hit kind (3 hip check, 4 cross check), +64 flag word (bit 0x01000000 knockdown
+interference, 0x00800000 stumble interference, 0x20000000 into the boards, 0x04000000 charging;
+bit 31 picks the "Knockdown" variant of each chance).
+
+### Decide: `sub_83487DC0(official, rec, contact)` -> 1 = call it
+1. Skip unless the game is running (*(*(0x83C1D218)+4) != 0); practice / mode gates (`sub_8346F700`,
+   `sub_8330C998`) unless the victim is down (victim +368 != 0 and +396 == 1).
+2. Grace period after a faceoff: ticks since 0x83C87508+52 < `gFaceOffPenaltyGracePeriod` -> no call.
+3. Shot in flight and the puck state owner == offender -> no call. Same team -> no call.
+4. chance = `sub_834859E0` (base chance by type) x `sub_83476288` (modifiers: injury, playoffs,
+   2nd period, shorthanded, existing delayed penalty, `gDisallowPenaltyForTicksAfterPenalty`).
+   Victim is a goalie (+40 == 1) and type < 6 -> fixed chance (constant 0x82013F58).
+5. roll = `sub_8330C2C0(1000)` x scale; **roll < chance -> return 1**.
+6. Otherwise, if the offender is on team 1 and the roll was close, post `GameEvent::MissedPenaltyCall`.
+
+Base chance by type (`sub_834859E0`): types 0-5 = body contact, summed from the flags:
+`gPenaltyChance(Knockdown)Interference`, `...HipCheckStumbleInterference`, `...StumbleInterference`,
+`...(Knockdown)HitIntoBoards`, `...(Knockdown)Charging`, `...(Knockdown)Elbowing` (type 5),
+`...(Knockdown)CrossChecking` (hit kind 4). Type 6 Poke (`gPenaltyChanceDiveFromPoke` when offender
++144 == 7, else `gPenaltyChancePoke`), 7 Slash, 8 / 11 HighStick, 9 Hook, 10 Hold.
+Plus `gPenaltyChancePenaltyShotBonus` when `sub_83481728` says it is a penalty-shot situation.
+
+### Assess: `sub_83487CC0` -> `sub_83486158` (rulebook.cpp: severity flags; reads gMajorChance,
+`gDoubleMinorChanceOnHighStick`) -> flag 0x80 = delayed: `sub_83481520(off, offender, victim, ...)`
+(PenaltyCall / penalty shot path), else `sub_83485BD0(off, offender, victim, flags, type, contact, 1)`.
+
+### Apply: `sub_83485BD0(official, r4 = offender, r5 = victim, r6 flags, r7 type, r8 contact, r9)`
+- 8 callers (the contact path above plus `sub_83488000` goalie restricted zone and other
+  non-contact infractions), so it is THE place a penalty is put on a player.
+- Gates: game running; `sub_83310DE8(team)`; not a special phase (`sub_83403848`); **bytes
+  0x83AC5F76 and 0x83AC5F65 must be 0** (HYPOTHESIS: "penalties off" game settings); the offender is
+  not already the pending delayed-penalty player (0x83C85EE0+68 / +84); offender +1104 < 3.
+- Writes the delayed-penalty block 0x83C85EE0 (+66 team + 3, +67 type, +108 offender +1648),
+  offender +1497 += 1 on some flags, then posts `GameEvent::PenaltyCall` (12 bytes: offender index,
+  flags, type).
+
+### Perk hooks (CANDIDATE)
+- **Penalty immunity for the BAP pro**: strong override of `sub_83485BD0`; if r4 == the BAP player
+  (0x83C876D4 or the claim) return without calling the original. Covers every penalty type.
+  Optional: also override `sub_83487DC0` and return 0 when *(r4+4) == BAP player, so the dice are
+  never rolled (no MissedPenaltyCall, no delayed-penalty state). `sub_83481520` (delayed path) is
+  reached only after the decision, so blocking the decision covers it.
+- **Draw more penalties**: in `sub_83487DC0`, when *(r4+8) == BAP player, raise the result (call the
+  original, return 1 with a perk chance). Tunable-only alternative is global: all
+  `gPenaltyChance*` objects (they apply to everyone).
+
+## 11. Round S6: player object, ratings, energy, balance (RE-11, slices_s6.txt, 2026-11-02, Amy)
+
+All STATIC (CANDIDATE).
+
+### Object and lifetime
+- **Skater object = 1968 bytes**: allocated in `sub_834006B8` (roster / game setup, the only caller;
+  also writes the player table 0x83C1D080), constructed by `sub_83511CC8(this, r4)`: base constructor
+  `sub_835119C8` (shared player base, 2 callers: skater and goalie), then class pointer 0x82271C10
+  at +0 and skater-only fields +1856..+1956 (+1872 float = constant 0x82014BEC then overwritten from
+  `sub_828A4650`, +1876 = 6, +1880 = 7, +1884 = 6, +1896 / +1900 / +1904 = -1, +1932 float).
+  Destructor `sub_83511E60` (deletes when r4 & 1).
+- Goalie class 0x8223F648 is written by `sub_8349D728` (a destructor-like teardown, frees 6 members) and
+  `sub_834AE678`; goalie fields reach at least +4688.
+
+### Player fields seen so far (all rounds, offsets from the player object)
+
+| Offset | Meaning | Source |
+|---|---|---|
+| +0 | class pointer (skater 0x82271C10 / goalie 0x8223F648) | CONFIRMED (re-findings) |
+| +40 | role: 0 skater, 1 goalie (HYPOTHESIS from penalty / puck code) | S2, S5 |
+| +48 | team side byte (0 / 1) | S1, S5 |
+| +57 | player index 0..39 | CONFIRMED (re-findings) |
+| +60 / +72 / +144 | action / reaction state words (144 == 7 / 8 / 14 / 25 tested in puck and penalty code) | S2, S5 |
+| +80 | pointer to a component; its +64 holds the object that carries **balance at +368** (maybe the player itself) | S6 |
+| **+360** | **energy (float, current)**: written by energy drop `sub_8350BD80` and recovery `sub_8350B960`; posted in BeAPro_ON_ICE | S6 |
+| **+364** | fatigue / energy cap (float), written by recovery | S6 |
+| **+368** | **injury pointer** (non-zero = injured): the rating read calls the injury modifier `sub_833C1C10(player, id)` when it is set (S7). +396 == 1 tested with it in the penalty decision | S5, S7 |
+| +508, +512 | contact bookkeeping (+512 = last tick processed) | S2 |
+| +564 | per-player hit memory sub-object (CONFIRMED use in re-findings) | - |
+| +1104 | penalty count this game (< 3 to get another) | S5 |
+| +1497 | counter bumped on some penalties | S5 |
+| +1648 | pointer (team / line object) | S1, S5 |
+| +4768 / +4854 / +4884 | flags / tick fields (puck contact) | S2 |
+
+### Ratings: `sub_83501A68(player, attrId)` -> float (115 callers)
+- Calls `sub_83501838(player, id)` (16 callers; reads the roster database through `sub_82C37xxx` /
+  `sub_82C38xxx` accessors), then `sub_834F6208`. HYPOTHESIS: raw database rating -> effective rating
+  (fatigue / difficulty applied).
+- Attribute ids from the formulas that use them (HYPOTHESIS names): **15 = endurance** (both energy
+  functions), **12 = aggressiveness**, **18 = strength**, **19 = fighting skill** (`sub_8350C998` = fight
+  rating = weighted gFightRatingAggressWeight / StrengthWeight / SkillWeight), **16** = a fight-related
+  rating also read raw (gFightRatingEnableFrequency).
+- Consequence: **perks past 99 = one strong override of `sub_83501A68`**: when r3 is the BAP player,
+  scale or add to f1 for the attribute in r4. Per-player by construction (no global tunables).
+
+### Energy (stamina perks)
+- Drop `sub_8350BD80(player)`: gBaseEnergyDrop(_BAP_Authentic), gEnergyDecRateFromAccel(BAP / CPU /
+  Human variants), speed boost, turn, high speed, PP / PK multipliers, ratings min / max via attribute 15.
+- Recovery `sub_8350B960(player, r4, r5)`: bench / ice idle rates, gBAP_FatigueRecoveryRate, PP / PK.
+- Consequence: stamina perk = override the drop function for the BAP player (scale the change to
+  +360), or write +360 directly every frame (simplest, no hook).
+
+### Balance
+- `sub_834E9FA8(player, kind, f1 amount)`: kind 0 = hit loose stick, 1 = bumped; penalty =
+  gBalancePenalty_* x gBalancePenalty_GlobalScale x amount; stores max(current, penalty) into
+  *(*(player+80)+64)+368. HYPOTHESIS: +368 OF THAT OBJECT is a balance loss (higher = closer to falling).
+  Correction (S7): player +368 is the injury pointer, so the object at *(player+80)+64 is NOT the
+  player itself.
+- Force-fall lead (RE-3 open item): write a large value to that +368 for a target player, or call
+  `sub_834E9FA8(target, 1, big)`. Needs the reader of +368 that triggers the fall.
+
+## 12. Round S7: how ratings are stored and read (slices_s7.txt, 2026-11-02, Amy)
+
+All STATIC (CANDIDATE).
+
+### Raw rating: `sub_83501838(player, id)` -> int
+- Normal path: **raw ratings are ints in the player object at +1240 + 4 * id** (load of
+  `player + 4 * (id + 310)`). This is the RE-11 target: a perk can write them directly, but see the
+  curve limit below.
+- Alternate path for skaters when byte 0x83AC5F65 is set: the value comes from a per-team block
+  (*(0x83C1D610) + team * 38520, player slot = index % 20) through `sub_82C38xxx` / `sub_82C37xxx`
+  accessors, + 36. HYPOTHESIS: HUT / card-based rating source (the same byte gates penalties in
+  `sub_83485BD0`, so "penalties off" in section 10 is probably wrong; it is a mode flag).
+- Injury: when player +368 != 0 and byte 0x83AC5F6F is set, `sub_833C1C10(player, id)` modifies it.
+
+### Effective rating: `sub_83501A68(player, id)` -> float
+1. raw = `sub_83501838(player, id)`.
+2. Ids returned linearly (raw x constant 0x8201DBDC, probably 0.01): skaters 16, 21; goalies also 1, 7.
+3. All others go through a **curve table**: value = table0x83CBC008[(raw - 36) * 7 + column], column
+   = difficulty: `gOverrideAmpLevel` / `gHUTOverrideAmpLevel` override, else *(*(0x83C1D218)+316); or,
+   when a bool tweak at 0x83CBD9D6 is set, a per-attribute column from 0x83CBC708 (skater) /
+   0x83CBBF90 (goalie). Rows exist for raw 36..99 only.
+4. Skaters on the wrong side (`sub_834F6208`, compares +304 of the player and of his line slot):
+   x `gWristShotPowWrongStick` (id 4), `gWristShotAccWrongStick` (5), `gSlapShotPowWrongStick` (6),
+   `gSlapShotAccWrongStick` (7), `gPassingWrongStick` (8), `gDekeWrongStick` (9),
+   `gPuckControlWrongStick` (10).
+
+Attribute ids so far: 4 wrist shot power, 5 wrist shot accuracy, 6 slap shot power, 7 slap shot
+accuracy, 8 passing, 9 deking, 10 puck control (all from the wrong-stick table, CANDIDATE),
+12 aggressiveness, 15 endurance, 18 strength, 19 fighting skill (HYPOTHESIS, from formulas),
+16 / 21 linear (fight frequency / ?), 2 and 25 seen in single callers.
+
+**Perks past 99:** writing raw > 99 at +1240 + 4 * id would index past the 64-row curve table
+(out of bounds read). Override the float result of `sub_83501A68` instead (or clamp the raw write
+to 99 and scale the float).
+
+### Fall trigger leads (offset 368 float scan)
+38 hits, mostly unrelated structs. S8 REJECTED the two best ones: `sub_829523F8` / `sub_82952300` add /
+read a value at +368 / +780 of 876-byte records indexed by league and position (ProfileTracker-style
+score records), not balance. `sub_8292FD88` is a pose / skeleton routine. The fall trigger is still open.
+
+## 13. Round S8: rating ids and injuries (slices_s8.txt, 2026-11-02, Amy)
+
+All STATIC. The curve table 0x83CBC008 is all zero in the image: it is filled at runtime (so its
+values can only be read live).
+
+### Injury effect: `sub_833C1C10(player, id)`
+Injury object = player +368 (+372, +384 remaining time > 0, +388 type). By injury class:
+**upper body** reduces ids 4, 5, 6, 7, 10, 18 (`gUpperBodyInjuryDrop`), **lower body** reduces ids
+0, 1, 2, 3 (`gLowerBodyInjuryDrop`); fades with `gTempInjuryEffectFadeTime`. So ids 0-3 are the
+skating ratings.
+
+### Attribute id map
+From 158 call sites of `sub_83501A68` with a literal id (43 more pass a variable), the tunables their
+callers read, the wrong-stick table and the injury classes. CONFIRMED only where two sources agree.
+
+| Id | Rating | Evidence |
+|---|---|---|
+| 0, 1, 2 | skating (speed / acceleration / agility, order unknown) | lower-body injury class; hustle / skating callers |
+| 3 | balance (skating group) | lower-body class; read by hit power `sub_833CA500` and hit tune `sub_83588BF8` |
+| 4 | wrist shot power | wrong-stick table + shot code (two sources) |
+| 5 | wrist shot accuracy | wrong-stick table + shot accuracy code |
+| 6 | slap shot power | wrong-stick table + shot code |
+| 7 | slap shot accuracy | wrong-stick table + one-timer / shot code |
+| 8 | passing | wrong-stick table + bad-pass code `sub_8341FA70` |
+| 9 | deking | wrong-stick table + deke / puck protection code |
+| 10 | puck control | wrong-stick table + gMaximumControl / gMinimumControl readers |
+| 11 | faceoffs | faceoff tunables (gFaceoff*) |
+| 12 | aggressiveness | post-whistle anger, mimic hit aggro, fight rating weights |
+| 13 | body checking | hit power `sub_833CA500` (with 3) |
+| 15 | endurance | energy drop / recovery |
+| 16 | fight-related, linear (durability or fight frequency?) | fight rating, raw int check |
+| 17 | discipline | tripping / elbowing / dive-for-penalty callers |
+| 18 | strength | fight rating weight, puck protection, upper-body class |
+| 19 | fighting skill | fight rating weight |
+| 21 | linear (unknown) | rating read special case |
+| 22 | hand-eye (HYPOTHESIS) | puck pickup / deflection callers |
+| 23 | shot blocking | shot-block rating / get-up time tunables |
+| 24 | ? (skating callers, gBT* tunables) | - |
+| 25 | ? (puck pickup / bobble, 11 callers) | - |
+| 26 | goalie (gCpuGoalieGeneralScale) | - |
+| 27 | ? (backhand / redirect shot accuracy) | - |
+| 28 | fight-related (gFightRatingWeight) | - |
+
+Perk use: an override of `sub_83501A68` keyed on (BAP player, id) gives per-rating perks, e.g.
+"+30 % shot power" = ids 4 + 6, "iron man" = 15, "unstoppable" = 3 + 18.
+
+## 14. Picking this up next session
+
+### 14.1 Method (upload-only; no GitHub file reads, no tunnel)
+1. Owner uploads the repo as `repo.b64.txt` (user-guide section 5). The agent decodes it in its
+   sandbox each time (the sandbox does not keep files between calls; re-decode from the asset).
+2. Whole-program index: `tools/index_generated.py` (owner runs it, uploads `index.partNN.b64.txt`).
+   Rebuild it only after a codegen change; the 2026-11-02 index (129,386 functions) matches the
+   current manifest. `tunable_readers.tsv` and `game_events.tsv` here are derived from it.
+3. Function bodies: `tools/slice_generated.py func|callers|callees|callsite|offset`, batched in one
+   PowerShell loop into `slices_sN.txt` (PowerShell `>>` writes UTF-16; the agent decodes that).
+   Use `callsite --context 16` or more: 3 lines are too few to see argument set-up.
+4. Static data: `tools/read_image.py <guest_image_dump.bin> words|floats|str|table ...`
+   (image from `NHL_DUMP_IMAGE=1`). .data holds INITIAL values only (runtime tables are zero).
+5. Decimal constants in generated code: `lis` values are printed as negative decimals
+   (e.g. -2084044800 = 0x83C80000). Tweak object value = object base + 40 = N + 32.
+
+### 14.2 Probe round S1 (written, not yet built)
+`src/rogue_static_probe.cpp`, run per user-guide 4g, log `rogue_probe_s.txt`. Read it like this:
+
+| Log line | Question | Expected if the static read is right |
+|---|---|---|
+| `sample ... bapcache=X claim=Y cache==claim:yes` | RE-2: 0x83C876D4 = BAP player? | yes in BAP after the claim; bapcache 0 / bapflag 0 in exhibition |
+| `player ... ratings[0..28]=...` | raw ratings at +1240 + 4 * id | plausible 36..99 values; endurance id 15 etc. match the pro's card |
+| `state A(..) -> B(..)` | state order | PRE_GAME -> ... FACEOFF -> GAME_ON -> GOOF_OFF ... -> DONE at game end |
+| `goal scorer=.. who=..` | goal hook registers | scorer / assist match the owner's notes |
+| `period-end` | period end hook | once per period, period number right |
+| `puck-contact ... code=` | puck contact registers | victim = player hit; last_touch_idx = shooter |
+| `pen-decide result=1` then `pen-apply` | penalty decide / apply | offender / victim match the notes; type matches the call |
+| `event-manager ... post(slot1)=` | event post function | an image address 0x82..-0x83..: next round hooks `sub_<that>` |
+| `slots begin .. end` | type ids | non-zero ids; decode future event logs |
+
+If a row holds: promote the ledger row in re-findings.md to OBSERVED (CONFIRMED needs the
+behaviour test, rule 4) and only then add the define to addresses.h.
+
+### 14.3 Static queue (next agent, in order)
+1. **Force fall (RE-3 open part).** Balance-loss value at *(*(player+80)+64)+368 (written by
+   `sub_834E9FA8`). Find who READS it and compares with a fall threshold: slices of
+   `sub_829380A0` (runs only on real falls), its callers `sub_8292AA40`, and the readers of
+   gBalanceOffpuckFallThreshold / gBalanceCarrierFallThreshold through the skating snapshot
+   (`skating_params_struct.txt`, `sub_828CC300`).
+2. **Rating ids still open:** 0 / 1 / 2 order, 16, 21, 24-28. Slice the single callers listed in
+   section 13 (e.g. `sub_83492BB8` for 26, `sub_833E87E0` for 27, `sub_833BE660` for 28).
+3. **Game end result (RE-5):** DONE enter `sub_8331EB98` and `sub_8330D530` (winner) +
+   `sub_82C360A0` (score getter?) for the final score and the BAP player's stat line.
+4. **BAP stat events (RE-6):** ProfileTracker scorer `sub_8347B820` and its caller `sub_83405F48`.
+5. **Event post function:** if the probe gives it, slice it to learn the listener dispatch, so one
+   hook can feed every event perk.
+
+### 14.4 Perk hook catalog (all CANDIDATE)
+
+| Perk need | Hook / read | Section |
+|---|---|---|
+| BAP player | read 0x83C876D4 | 7 |
+| BAP game start / end, intermission | `sub_8330C890` state switch (PRE_GAME / DONE / STORYTELLER) | 9 |
+| Goal | `sub_83480248` (r3 scorer, r4 assister) | 6 |
+| Period end | `sub_8331F408` | 7 |
+| Puck hits player / shot block | `sub_83328180` | 7 |
+| Penalty immunity / draw penalties | `sub_83485BD0` / `sub_83487DC0` | 10 |
+| Ratings past 99 | override `sub_83501A68` result | 12, 13 |
+| Stamina | write player +360 or scale `sub_8350BD80` | 11 |
+| Hit power / knockdowns | `sub_833B9028` (CONFIRMED, already used) | re-findings |
+| Force fall | open (14.3 item 1) | 11, 12 |

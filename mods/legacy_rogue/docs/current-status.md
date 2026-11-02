@@ -1,6 +1,6 @@
 # Current status (AUTHORITATIVE)
 
-Last updated: 2026-11-02 (19:00) by Amy (monday.com agent). If this disagrees with another doc,
+Last updated: 2026-11-02 (19:45) by Amy (monday.com agent). If this disagrees with another doc,
 this wins; fix the other doc.
 
 ## Baseline
@@ -31,6 +31,13 @@ this wins; fix the other doc.
   Every setup problem hit so far and its fix: `user-guide.md` section 7.
 - GitHub: agents can READ the fork but writes fail from the agent's connection. Deliver changes
   as a zip of changed files only (00-START-HERE rule 12).
+
+## Session end 2026-11-02 (19:45): static map extended + probe round S1 written
+
+After the 19:00 checkpoint (below): penalty path (RE-10), player object / ratings / energy /
+injury (RE-11), rating id map, and `src/rogue_static_probe.cpp` (PROBE-S1, read-only, NEW .cpp ->
+`_game_ffx_build.bat`). How to pick up: `docs/static/static-map.md` section 14 (method, how to read
+the probe log, static queue, perk hook catalog). Not compiled by the agent (stub syntax check only).
 
 ## Checkpoint 2026-11-02 (19:00): static map of the generated code (no game runs)
 
@@ -189,6 +196,7 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 | BUILD-10 | Build the 2026-10-30 17:45 package (claim + round 6, incremental) | U | DONE 2026-10-30 (round 6 ran) |
 | BUILD-11 | Build the 2026-10-30 18:45 checkpoint (first event perks + round 7), commit + push | U | DONE 2026-10-30 (0290eb7); round 7 exhibition part ran 2026-10-31 |
 | BUILD-12 | Round 8 marker scan (edited in the local repo by the agent, 2026-10-31): incremental build, run user-guide 4f, commit + push | A+U | ACTIVE: edits applied, incremental build PASSED 2026-10-31 (agent, `_build_vkffx_incr.bat`; only the existing fopen/getenv warnings). Owner: 4f run, commit + push |
+| BUILD-13 | Build PROBE-S1 (`src/rogue_static_probe.cpp`, added to CMakeLists): `scripts\_game_ffx_build.bat`, then user-guide 4g; commit + push | U | TODO (written 2026-11-02, not compiled by the agent) |
 | PARENT-1 | Tell the parent project: its Engine Tunables editor / `ITunableStore` writes record+8 (the type tag) instead of the live value N+32 (+ heap copy H+36); its `gDekeRatEffect` sanity value comes from the registration pool. Evidence: re-findings.md. Owner decides how to report (issue / PR) | Owner (agent drafts) | TODO |
 
 ### Bugs
@@ -226,8 +234,8 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 | RE-7 | BAP career save identity | A+U | TODO |
 | RE-8 | BAP progression storage (lead: `BAP_PLAYER_GROWTH` @ 0x82035818) | A+U | TODO |
 | RE-9 | Meta reactions: contracts, trades, line promotion, task grading | A+U | TODO |
-| RE-10 | Penalty call decision (for a "no checking penalties" perk). Lead: `sub_83310E68` (reads gHandlePotentialKnockedOverPenaltiesTime) ran twice in round 3 with r3=0x0D | A+U | ACTIVE (static, Amy 2026-11-02): candidates `sub_83487DC0` (oniceofficial.cpp), `sub_834859E0` (gPenaltyChance*), `sub_83476288`, `sub_83487CC0`, `sub_83485BD0` (Penalty raiser), `sub_83486158` (rulebook.cpp); slices requested |
-| RE-11 | BAP player's live ratings in memory (for perks past 99). Round 4 player-object dumps may help | A+U | TODO |
+| RE-10 | Penalty call decision (for a "no checking penalties" perk). Lead: `sub_83310E68` (reads gHandlePotentialKnockedOverPenaltiesTime) ran twice in round 3 with r3=0x0D | A+U | STATIC DONE 2026-11-02 (Amy, static-map.md section 10): decide `sub_83487DC0(off, rec, contact)` (rec+4 offender, rec+8 victim, returns 1 = call), apply `sub_83485BD0(off, offender, victim, ...)` (every penalty). Immunity perk = override `sub_83485BD0`, skip when r4 == BAP player. Needs a probe before addresses.h |
+| RE-11 | BAP player's live ratings in memory (for perks past 99). Round 4 player-object dumps may help | A+U | ACTIVE (static, Amy 2026-11-02): rating getter `sub_83501A68(player, attrId)` (115 callers; 15 endurance, 12 aggressiveness, 18 strength, 19 fighting, HYPOTHESIS); energy player+360; skater object 1968 bytes. static-map.md section 11 |
 
 ### Feedback effects
 | ID | Task | Who | Status |
@@ -247,20 +255,15 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 
 ## Recommended next action
 
-0. (2026-11-02) Static analysis continues without game runs: RE-10 penalty decision, then the
-   player object / physics layout (RE-11, force fall). When the owner plays again, run round 8 and
-   read 0x83C876D4 in the same session (static-map.md section 10).
-
-1. Owner: commit + push the round 8 working-tree changes (BUILD-12; already built).
-2. Owner: user-guide 4f: one or two BAP games with the marker scan (claim your pro, play through
-   bench shifts, whistles and an intermission). Upload `rogue_probe.txt` + the "Marker scan"
-   line at each period end.
-3. Agent: RE-2 decision from the marker log. If clean: define ROGUE_OFF_SKATER_CONTROLLER 0x22C,
-   change IsBapSkater (rogue_hooks.cpp) from "== ROGUE_HUMAN_CONTROLLER_VALUE" to "!= 0xFF",
-   claim automatically, keep the manual claim as an override. Then DES-3 options in design.md,
-   then refresh 00-START-HERE.md.
-4. Next RE for more perks: puck-vs-body (RE-4, crit slap), a force-fall entry (Shockwave), BAP
-   game start / end (RE-5) so the Manual buttons can go.
+1. Owner: commit + push (2026-11-02 package; message in the session reply / handoff-log).
+2. Owner, next game session: BUILD-13 (`_game_ffx_build.bat`), then user-guide **4g** (static probe
+   S1) and **4f** (round 8 marker scan) in the same BAP session. Upload `rogue_probe_s.txt`,
+   `rogue_probe.txt` and notes (game clock of goals, penalties, shot blocks, intermission).
+3. Agent with the logs: read them with static-map.md section 14.2; promote ledger rows; RE-2
+   decision (0x83C876D4 vs +0x22C marker); then the first hooks into addresses.h only after the
+   behaviour tests (penalty immunity and rating boost are the cheapest to test).
+4. Agent without logs (static only): static-map.md section 14.3 queue (force fall first).
+5. Later: DES-3 options in design.md; refresh 00-START-HERE.md mechanism table.
 
 ## How to verify the branch state without the owner
 
