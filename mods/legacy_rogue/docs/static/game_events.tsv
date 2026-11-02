@@ -1,0 +1,199 @@
+event	type_slot	n_str_users	n_slot_users	users
+AIObjectInitComplete	83B6F614	1	1	sub_828A9AF0
+Announce3Stars	83BCF190	1	1	sub_829A92D0
+AnnounceGoal	83BEF080	1	1	sub_83323B10
+AnnouncePenalty	83BEF084	1	1	sub_8331B5A0
+BAPLineChangeButtonOff	83BD17C0	2	1	sub_83502A58,sub_8351E798
+BAPLineChangeButtonOn	83BD17BC	0	0	
+BAPVisualFXFadeComplete	83BD17C8	1	1	sub_82E47550
+BAPVisualFXStartFade	83BD17C4	0	0	
+BAPVisualFXStartReveal	83BD17CC	0	0	
+BatDown	83BEF088	1	1	sub_83582000
+BeAPro_COACH_FEEDBACK	83BD17B8	4	4	sub_8336FE80,sub_8336FF10,sub_8336FFE8,sub_8351E798
+BeAPro_FATIGUE_LEVEL	83BD17B4	1	1	sub_834E3F30
+BeAPro_OFF_ICE	83BD17A4	1	1	sub_83483610
+BeAPro_ON_ICE	83BD17A0	1	1	sub_8347D390
+BeAPro_REQUEST_CHANGE	83BD17B0	0	0	
+BeAPro_SHIFT_END	83BD17AC	1	1	sub_83483610
+BeAPro_SHIFT_START	83BD17A8	1	1	sub_8347D390
+BeAPro_Task_Assigned	83BD0584	3	3	sub_829C1F60,sub_8331E8A8,sub_834E7CA0
+BeAPro_Task_Cancelled	83BD17D0	1	1	sub_834E4430
+BeAPro_Task_Complete	83BD17D4	1	1	sub_834E4430
+BeAPro_Task_ScoreChange	83BD17D8	1	1	sub_834E4298
+BeginReplay	83BEF08C	3	3	sub_833E0098,sub_83463DB0,sub_83464940
+BenchPieceVisibility	83BF6B8C	2	2	sub_8346A9C8,sub_8346CB80
+BlockShot	83BE87DC	1	1	sub_83328180
+Boardplay	83BE87E0	1	1	sub_83595320
+BoardplayExit	83BE87E4	1	1	sub_83595320
+BoardplayInitiated		1	0	sub_8333F9C0
+BraceForHit		1	0	sub_835D1388
+Breakaway	83BEF090	1	1	sub_835BBCF8
+CallPenaltyShot	83BD179C	1	1	sub_83485F90
+CallTimeOut	83BEF094	2	1	sub_8331E340,sub_833E0098
+CancelPulledGoalie	83BEF098	1	1	sub_833DCFD8
+Check	83BEF09C	2	2	sub_835A7078,sub_835A8268
+Chop	83BE894C	3	3	sub_8358B4E8,sub_835D2A00,sub_835D2D70
+ClearAttempt	83BE87E8	1	1	sub_833ECF68
+ClearResult	83BEF0A0	1	1	sub_834755E0
+ClockSecond	83BEF0A4	1	1	sub_83485740
+DekeGoalie	83CB23B4	0	0	
+DekePlayer	83CB23B0	0	0	
+DumpAttempt	83BE87F0	1	1	sub_833ECF68
+DumpResult	83BEF0A8	1	1	sub_834755E0
+EndIntermissionStartPeriod	83BEF0AC	1	1	sub_8331F150
+EndPeriod	83B6FAAC	1	1	sub_8331F408
+EndPeriodInjuryEffectsComplete	83BD1818	2	2	sub_836228A0,sub_83623B18
+EndPeriodInjuryEffectsStart	83BD2C90	1	1	sub_829F0910
+EndRush	83BEF0B0	1	1	sub_835BBCF8
+EndShootout	83B6FAB0	1	1	sub_8331F4B8
+EnterExitIce		4	0	sub_83591C28,sub_83591DF8,sub_8359F718,sub_8359F968
+ExitWarmupGame	83C22D20	1	1	sub_8331DFE8
+ExtraAttacker		1	0	sub_83409958
+FaceoffEnd	83BE87F4	1	1	sub_833BDB98
+FaceoffResult	83BEF0B4	1	1	sub_833BDD10
+FaceoffSetup	83BE4F74	1	1	sub_833C6398
+FacialInjuryEffect	83BF5280	1	1	sub_833C1A20
+FailedOneTimer	83BEF0DC	1	1	sub_833F6460
+FightEnd	83BEF0B8	1	1	sub_833BF0C8
+FightEnding	83BEF0BC	1	1	sub_833C8F10
+FightInjury	83BD1810	1	1	sub_833C1828
+FightPending	83C7CC48	1	1	sub_833D8868
+FightPlayerGainHealth	83BF528C	1	1	sub_833C8F10
+FightPlayerKnockedOut	83BE4F78	1	1	sub_833C8F10
+FightPlayerPunchStart		1	0	sub_833C8F10
+FightPlayerPunched	83BEF0C0	1	1	sub_833C8DD0
+FightPlayerTugStart	83C7CC4C	1	1	sub_833C8F10
+FightPlayerTurtlePunched	83BEF0C8	0	0	
+FightPlayerTurtled	83BEF0C4	0	0	
+FightRejected	83BEF0CC	1	1	sub_833DEF68
+FightStart	83BEF0D0	1	1	sub_833DF850
+FightStartSecondary	83BEF0D4	1	1	sub_833275C0
+FightStepIn	83BEF0D8	1	1	sub_833DF850
+ForecheckAdjusted	83BE8968	1	1	sub_835B7860
+ForecheckBiasComment	83BE8964	2	2	sub_835B7860,sub_835B8250
+ForecheckNZEnded	83BE8954	1	1	sub_835C0B50
+ForecheckNZStruggling	83BE895C	1	1	sub_835B76F0
+ForecheckOZEnded	83BE8950	1	1	sub_835C0B50
+ForecheckOZStruggling	83BE8958	1	1	sub_835B74F8
+ForecheckSucceeding	83BE8960	1	1	sub_835B7860
+FreezePowerRing	83BF6B90	2	2	sub_8346BC70,sub_8346CB80
+GameOver	83BE4F7C	1	1	sub_83326280
+Generic	83BD178C	4	4	sub_8338EAF8,sub_833E0098,sub_83484E60,sub_834BE7C0
+GlassBreak	83BF5270	1	1	sub_82E46B08
+GlassShake	83BE87F8	4	4	sub_8342B438,sub_83595320,sub_835A3618,sub_835A3A80
+GloveSwipe		1	0	sub_83416178
+GlovesDropped	83BF5290	1	1	sub_833C82E0
+Goal	83BD1780	1	2	sub_833DAD30,sub_83480248
+GoalAwarded	83B6FAA8	2	2	sub_834801A0,sub_83480248
+GoalLight	83BF5284	3	3	sub_83319268,sub_833192F8,sub_83479308
+GoalOnDoubleMinor		1	0	sub_8331AB60
+GoalOnMajor	83C22D14	1	1	sub_8331AB60
+GoalOnMinor	83C22D2C	1	1	sub_8331AB60
+GoalieBackInPosition		2	0	sub_834C1BE8,sub_83594E50
+GoalieGetsSnowedNonDeterministic	83BEF0E4	1	1	sub_83646D40
+GoalieReleasePuck	83BEF0E0	0	0	
+GoofOffIsOver	83BEF0E8	1	1	sub_8331EDB8
+HelmetDropped	83BEF0EC	1	1	sub_835F05E8
+HelmetIceCollision	83BE87FC	1	1	sub_835EDF30
+IcedPuck	83BEF0F4	2	2	sub_83484AA0,sub_834853C8
+IcingBeatOut	83BEF0F0	1	1	sub_834853C8
+Injury	83BD180C	1	1	sub_833C1720
+InjuryCoachDecision	83BEF0F8	1	1	sub_833CB4E0
+InjuryCoachDecisionNIS	83C7CC40	1	1	sub_833CB2A0
+Instigation	83BEF0FC	1	1	sub_833C7BA0
+IntentToHitStart	83CB23C4	1	1	sub_83594BD0
+Interception	83BEF100	1	1	sub_833EC4A8
+Intimidation	83C84910	1	1	sub_833F48F8
+IntimidationReduction	83C84914	1	1	sub_833F4B38
+KnownSequence	83BEF104	3	3	sub_83474270,sub_83474670,sub_83474B08
+LastMinute	83BEF108	1	1	sub_83485740
+LineChange	83BEF118	1	1	sub_833DCAE8
+LooseHelmetSituation	83C22D28	4	4	sub_83321B78,sub_83459DC0,sub_83596058,sub_83596230
+LoosePuckDekeFail		1	0	sub_833E5CE8
+LoosePuckDekeStart		1	0	sub_8341A138
+LoosePuckDekeSuccess	83C84908	1	1	sub_833E5CE8
+LooseStick	83BE8800	2	2	sub_83410268,sub_834106F8
+LooseStickGrabBenchStick	83BEF10C	2	2	sub_8341BA38,sub_8341C390
+LooseStickGrabDroppedStick	83BEF110	1	1	sub_8341C480
+LooseStickGrabTeammateStick	83BEF114	1	1	sub_8341BA38
+LooseStickIceCollision	83BE8804	1	1	sub_835EDF30
+MagnumPlaybackStart		1	0	sub_83570428
+MagnumPlaybackStop		1	0	sub_83570620
+MagnumRecordStart		1	0	sub_83576130
+MagnumRecordStop	83CB23AC	1	1	sub_83576460
+MissedNet	83BEF11C	1	1	sub_835B4DA8
+MissedPenaltyCall		1	0	sub_83487DC0
+NetBattleAction	83C93E60	1	1	sub_8345A018
+NetBattleInProgress	83BEF120	1	1	sub_8345A018
+NotifyKnownSequenceReplay	83BEF124	1	1	sub_834CDBF0
+PassComplete	83BE8808	1	1	sub_83415190
+PassEnd	83BEF170	1	1	sub_833EC4A8
+PassIncomplete	83BEF128	1	1	sub_83415610
+PassStart	83BE880C	1	1	sub_83420B50
+Penalty	83BEF12C	1	1	sub_83485BD0
+PenaltyAlmostOver	83C22D30	1	1	sub_8331A180
+PenaltyCall	83BD1790	2	2	sub_83481520,sub_83485BD0
+PenaltyOver	83BEF174	1	1	sub_83311900
+PenaltyShotMiss		1	0	sub_83504810
+PenaltyStoppage	83BD1794	1	1	sub_83476070
+PickupPuck	83BE8810	1	1	sub_833E5E48
+PlayerInteraction	83C22D34	1	1	sub_833275C0
+PlayerInteractionControllerRumble	83C22D38	2	2	sub_833275C0,sub_833291F8
+PlayerInteractionEnd	83C22D24	2	2	sub_83321B78,sub_833291F8
+PlayerOutOfPosition		1	0	sub_8347EBB0
+PlayerStopPlay	83BD1798	13	13	sub_83313E38,sub_83484320,sub_83484AA0,sub_83484CE8,sub_83485040,sub_834853C8,sub_83485F90,sub_83488E48
+PostWhistleBehaviorOver	83C22D3C	1	1	sub_83326AC8
+PotentialPenalty		1	0	sub_8331B1B0
+PracticeModeFaceoffSetup	83C7CC44	1	1	sub_833C6CC8
+PracticeTargetHit	83BE8818	2	2	sub_83479958,sub_8347A810
+PressureEnd		1	0	sub_834717B8
+PressureStart		1	0	sub_83471888
+ProgressMessage	83BD1808	4	4	sub_8331E470,sub_8331E8A8,sub_83326018,sub_83326280
+PuckFrozenGoalieTraffic	83C22D40	1	1	sub_83326AC8
+PuckHeadingTowardsBench	83CB23C0	1	1	sub_83502D58
+PuckHitBoards	83BE881C	1	1	sub_83504FC0
+PuckHitIce	83BE8820	1	1	sub_83504FC0
+PuckHitLooseHelmet		1	0	sub_83504FC0
+PuckHitLooseStick	83BE8824	1	1	sub_83504FC0
+PuckHitPlayer	83C22D1C	1	1	sub_83328180
+PuckHitPost	83BE8828	1	1	sub_834F7750
+PuckRimAroundBoards	83BE882C	1	1	sub_83504FC0
+PullGoalie	83BEF130	3	3	sub_8331F150,sub_833DCFD8,sub_83413FB0
+RefGoalCall	83BEF134	1	1	sub_83505AC8
+RefPenaltyCall	83BEF138	1	1	sub_835057A8
+RematchStartPeriod	83BEF13C	1	1	sub_8341CA80
+Rush	83BEF140	1	1	sub_835BBCF8
+Save	83BE8830	1	1	sub_83322D70
+SaveAttempt	83BEF144	1	2	sub_82DD4EA8,sub_834A4FD0
+ScreenedGoalie	83BEF148	1	1	sub_83494E80
+SecondaryFightPlayerPunched	83BEF14C	1	1	sub_83321B78
+SetupShootout	83BE4F84	1	1	sub_83316108
+ShootoutGoal	83C88E3C	1	1	sub_83408820
+Shot	83BE8834	2	1	sub_833ECF68,sub_83504FC0
+ShotBlockInjury	83BD1814	1	1	sub_833C18E8
+SkateKick	83BEF150	1	1	sub_83415F38
+SkatingGlideTurn	83BE8844	0	0	
+SkatingStop	83BE8848	0	1	sub_83595320
+SlapPass	83BE884C	1	1	sub_833ECF68
+SlashHookInitiated		2	0	sub_835A1640,sub_835A5F10
+SlashHookResult	83BEF178	3	3	sub_83599988,sub_835A0118,sub_835A0D08
+StartOfShootoutInRegularGame	83BEF154	1	2	sub_82DD4EA8,sub_8331F150
+StartPeriod	83BE4F80	2	2	sub_8339B0C8,sub_8341CA80
+StickCheck	83BEF158	8	8	sub_83386288,sub_83386530,sub_833A1F40,sub_833A3040,sub_834C0FC0,sub_83598FC8,sub_835A0470,sub_835A06E8
+StickLiftAttempt	83BEF15C	1	1	sub_835A62E8
+StorableGameEvent	83C22D0C	106	106	sub_83311900,sub_83313E38,sub_83315A20,sub_83316038,sub_83316108,sub_8331AB60,sub_8331B1B0,sub_8331F150
+SwapGoalie	83BEF160	1	1	sub_83315A20
+Takeaway	83C98D64	1	1	sub_83472AE8
+TendencyDetection	83BEF164	2	2	sub_8356F3C8,sub_8356F628
+TendencyFlowDetection		1	0	sub_8356F518
+TendencyObservation	83CB23B8	1	1	sub_8356F950
+TimeLeftInPenalty	83BEF18C	1	1	sub_8331A180
+TriggerPowerRingEffect	83BF6B94	1	1	sub_834CE470
+Turnover	83BEF168	2	2	sub_8337DAA0,sub_833EC4A8
+UsefulLoosePuckDekeFail	83BEF17C	1	1	sub_83472AE8
+UsefulLoosePuckDekeStart	83BEF180	1	1	sub_8341A138
+UsefulLoosePuckDekeSuccess	83BEF184	1	1	sub_833EC4A8
+UserCalledForPass	83CB23BC	1	1	sub_8351CEA0
+WarmupExitConditionsMet		1	0	sub_8331DFE8
+Whistle	83BD1820	1	1	sub_83316038
+ZonePossessionTime	83BEF190	1	1	sub_835B4488

@@ -93,6 +93,9 @@ mods/legacy_rogue/
   tools/find_tweak_consumers.py static readers of tweak objects (TUN-8/9)
   tools/slice_generated.py      extract a function / callers / callees / field-offset uses
                                 from generated/default (upload the output as .txt)
+  tools/index_generated.py      whole-program index (callees, constant refs, strings) for upload
+  tools/read_image.py           read words / floats / strings / tables from the image dump
+  docs/static/                  static map (static-map.md) + tunable_readers.tsv + game_events.tsv
   docs/                         this folder
 ```
 

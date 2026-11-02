@@ -438,3 +438,25 @@ ROGUE_OFF_SKATER_CONTROLLER path tests equality with ROGUE_HUMAN_CONTROLLER_VALU
 `_build_vkffx_incr.bat` / `_c5renderdoc.ps1` show line-ending-only changes in the working tree
 (not touched by the agent; restore with `git checkout -- scripts/<file>`).
 **Next action:** user-guide 4f (owner); RE-2 decision (agent).
+
+### 2026-11-02 - Amy - Static map of the generated code (index + 4 slice rounds)
+**Objective:** Map useful functions statically while the owner does no game runs; reach the code
+through uploads only (the GitHub connector returns no file content; no tunnel used).
+**Done:**
+- Wrote `tools/index_generated.py`; owner ran it on generated/default + an `NHL_DUMP_IMAGE` dump:
+  129,386 functions, 49,163 referenced strings.
+- Mapped 12,211 tweak objects to their addresses (12/12 known ones reproduced) and their static
+  readers; mapped the GameEvent system (198 types, raisers, type slots).
+- Slice rounds S1-S4: event post pattern, BAP player cache 0x83C876D4, game state machine + names
+  (read from the image), goal / period end / stoppage / puck contact functions, player tables.
+- Wrote `tools/read_image.py` and `docs/static/` (static-map.md, tunable_readers.tsv, game_events.tsv).
+**Files changed:** `tools/index_generated.py`, `tools/read_image.py` (new),
+`docs/static/static-map.md`, `docs/static/tunable_readers.tsv`, `docs/static/game_events.tsv` (new),
+`docs/current-status.md`, `docs/handoff-log.md`, `docs/00-START-HERE.md` (file map lines).
+**Validation:** tools tested on synthetic inputs in the agent sandbox; the owner ran both on the
+real tree (index and table reads came back as expected). No C++ changed, no build needed.
+**Proven:** tunable name -> N mapping matches all 12 addresses already in the repo; state names and
+reaction names are literal image strings.
+**Hypotheses / unresolved:** everything else in static-map.md is CANDIDATE (static only). The event
+post function address is runtime-only. 0x83C1D278 vs 0x83C1D080 player tables: relation unknown.
+**Next action:** RE-10 penalty slices (owner), then RE-11 player object / physics.

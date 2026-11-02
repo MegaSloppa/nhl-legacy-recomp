@@ -1,6 +1,6 @@
 # Current status (AUTHORITATIVE)
 
-Last updated: 2026-10-31 (18:20) by Shirley (monday.com agent). If this disagrees with another doc,
+Last updated: 2026-11-02 (19:00) by Amy (monday.com agent). If this disagrees with another doc,
 this wins; fix the other doc.
 
 ## Baseline
@@ -31,6 +31,30 @@ this wins; fix the other doc.
   Every setup problem hit so far and its fix: `user-guide.md` section 7.
 - GitHub: agents can READ the fork but writes fail from the agent's connection. Deliver changes
   as a zip of changed files only (00-START-HERE rule 12).
+
+## Checkpoint 2026-11-02 (19:00): static map of the generated code (no game runs)
+
+Owner uploaded a whole-program index (`tools/index_generated.py`, 129,386 functions + referenced
+strings from an `NHL_DUMP_IMAGE` dump) and four rounds of slices. Everything below is STATIC =
+CANDIDATE; nothing went into `addresses.h`. Full write-up: `docs/static/static-map.md`.
+- Tunables: 12,211 tweak objects mapped name -> N (12/12 known addresses reproduced), 6,487 with a
+  static N+32 reader: `docs/static/tunable_readers.tsv`.
+- The game's event system: 198 `GameEvent::*` types, raiser per type (`docs/static/game_events.tsv`).
+  Post = virtual slot 1 of the event manager (`sub_82FEC310` returns it); address runtime-only.
+- **RE-2 lead: cached BAP player pointer at 0x83C876D4** (filled by `sub_834DC8A8`; valid while the
+  match pointer 0x83C1E89C != 0 and the BAP flag byte 0x83AC5F63 != 0). A read, no hook.
+- **Game state machine**: current state 0x83C1D220, switch `sub_8330C890`, handler table 0x83AA5B20
+  with names (PRE_GAME, PRE_FACEOFF, SYNCHING, FACEOFF, GAME_ON, GOOF_OFF, PREFIGHT, FIGHT, POSTFIGHT,
+  DONE, STORYTELLER, NISVIEWER, PRACTICE_GOOFOFF, TUTORIAL_GOOFOFF). RE-5 candidates: DONE = game end.
+- Goal `sub_83480248` (r3 scorer, r4 assister), period end `sub_8331F408`, period word 0x83C876B8,
+  puck hits player / block shot `sub_83328180` (r3 puck, r4 victim, r5 code), stoppage handler
+  `sub_83326280` (r3 reason; 19 = fight), player table 0x83C1D080 [team*20 + slot].
+- Reaction table entry names (image): incidental, nudge, stumble, stumble fall (the mod's "normal
+  hit", 0x83ABF57C), fall (the mod's "knockdown", 0x83ABF598).
+- New tools: `tools/index_generated.py` (index for upload), `tools/read_image.py` (read words /
+  floats / strings / tables from the image dump).
+- Round 8 (BUILD-12) is still waiting for its in-game run; the static RE-2 lead can be checked in
+  the same session (read 0x83C876D4 next to the claim).
 
 ## Checkpoint 2026-10-31 (18:20)
 
@@ -194,15 +218,15 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 |---|---|---|---|
 | RE-0 | Run `tools/find_bap_code.py` on the decompressed image, upload report | U | TODO (low; the sweep approach works better) |
 | RE-1 | Check resolution (hitter/hittee) | A+U | DONE 2026-10-30 for detection: hit contact `sub_833E0BF8` (r3 victim, r4 hitter) + knockdown reaction 0x83ABF598 CONFIRMED (rounds 3-4), in addresses.h. Changing hit outcomes needs the decision point: RE-3 / CHECK_RESOLVE (`sub_83429560`) |
-| RE-2 | Identify the BAP-controlled skater | A+U | ACTIVE. Interim claim works (round 6). Marker byte +0x22C: 0x00 on the pro in BAP (round 6), 0x06 on the controlled player in exhibition, 0xFF on everyone else (round 7), so the test is now != 0xFF. Round 8 (user-guide 4f): BAP game(s) with the marker scan. Two clean BAP games -> CONFIRMED -> automatic claim |
+| RE-2 | Identify the BAP-controlled skater | A+U | ACTIVE. Interim claim works (round 6). Marker byte +0x22C: 0x00 on the pro in BAP (round 6), 0x06 on the controlled player in exhibition, 0xFF on everyone else (round 7), so the test is now != 0xFF. Round 8 (user-guide 4f): BAP game(s) with the marker scan. Two clean BAP games -> CONFIRMED -> automatic claim. STATIC lead 2026-11-02: cached BAP player pointer 0x83C876D4 (static-map.md section 7) |
 | RE-3 | Knockdown: fall entry point or skater balance offset | A+U | DONE 2026-10-30 for hit outcomes: power -> reaction table (CONFIRMED), Freight Train / Wrecking Ball built on it. A force-fall for non-contact effects (Shockwave on nearby players, crit slap) is still open: lead `sub_83429560` called for another victim |
-| RE-4 | Puck-vs-skater contact | A+U | TODO |
-| RE-5 | BAP game start / end + final score + BAP player's stat line | A+U | TODO: the PE_* handlers never run. Next lead: post-game screens / XP award code |
-| RE-6 | BAP stat-event stream. Lead: `gBeAPro_*_StatEvent` tunables; hit credit pair `sub_83589B38` + `sub_8357F9A0` (from `sub_8358A1D0` / `sub_835A7078`) may be the hit stat | A+U | TODO |
+| RE-4 | Puck-vs-skater contact | A+U | TODO. STATIC lead 2026-11-02: `sub_83328180` (r3 puck, r4 victim, r5 code; shooter = players[puck+180]); posts PuckHitPlayer / BlockShot |
+| RE-5 | BAP game start / end + final score + BAP player's stat line | A+U | TODO: the PE_* handlers never run. Next lead: post-game screens / XP award code. STATIC leads 2026-11-02: state machine `sub_8330C890` (DONE = game end), period end `sub_8331F408`, goal `sub_83480248`, period 0x83C876B8 |
+| RE-6 | BAP stat-event stream. Lead: `gBeAPro_*_StatEvent` tunables; hit credit pair `sub_83589B38` + `sub_8357F9A0` (from `sub_8358A1D0` / `sub_835A7078`) may be the hit stat | A+U | TODO. STATIC 2026-11-02: the game's own GameEvent stream (game_events.tsv); one hook on the post function would see every event |
 | RE-7 | BAP career save identity | A+U | TODO |
 | RE-8 | BAP progression storage (lead: `BAP_PLAYER_GROWTH` @ 0x82035818) | A+U | TODO |
 | RE-9 | Meta reactions: contracts, trades, line promotion, task grading | A+U | TODO |
-| RE-10 | Penalty call decision (for a "no checking penalties" perk). Lead: `sub_83310E68` (reads gHandlePotentialKnockedOverPenaltiesTime) ran twice in round 3 with r3=0x0D | A+U | TODO |
+| RE-10 | Penalty call decision (for a "no checking penalties" perk). Lead: `sub_83310E68` (reads gHandlePotentialKnockedOverPenaltiesTime) ran twice in round 3 with r3=0x0D | A+U | ACTIVE (static, Amy 2026-11-02): candidates `sub_83487DC0` (oniceofficial.cpp), `sub_834859E0` (gPenaltyChance*), `sub_83476288`, `sub_83487CC0`, `sub_83485BD0` (Penalty raiser), `sub_83486158` (rulebook.cpp); slices requested |
 | RE-11 | BAP player's live ratings in memory (for perks past 99). Round 4 player-object dumps may help | A+U | TODO |
 
 ### Feedback effects
@@ -222,6 +246,10 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 | DES-3 | Perk system shape (owner 2026-10-30): maybe no stacking, perks much more expensive but much more powerful; risks: nothing left to buy too soon, a run that is overpowered and no longer fun later, and an early run that is just standard NHL. Owner wants something special from game 1. Agent to propose options (e.g. a strong starting "archetype" perk, perks that evolve or have drawbacks, Notoriety-scaled opposition, Hype sinks such as rerolls / temporary boosts / Legacy) in design.md | Owner + A | TODO |
 
 ## Recommended next action
+
+0. (2026-11-02) Static analysis continues without game runs: RE-10 penalty decision, then the
+   player object / physics layout (RE-11, force fall). When the owner plays again, run round 8 and
+   read 0x83C876D4 in the same session (static-map.md section 10).
 
 1. Owner: commit + push the round 8 working-tree changes (BUILD-12; already built).
 2. Owner: user-guide 4f: one or two BAP games with the marker scan (claim your pro, play through
