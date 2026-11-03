@@ -91,5 +91,8 @@ Later (FX-4/FX-5): game-native crowd roar, horn, camera shake, forced replay of 
 ## 8. Starter perks (src/perk_catalog.cpp)
 
 Cannon, Sniper Scope, Critical Slapshot*, Freight Train, Wrecking Ball*, Shockwave*,
-Jet Skates, Iron Lungs, Captain's Aura. Curses: Glass Bones, Goon Squad.
-(* = event perk, inert until its hooks are confirmed.)
+Jet Skates, Iron Lungs, Captain's Aura, Untouchable* (Legendary, added 2026-11-03 on the owner's
+say-so: the refs never call a penalty on you; may be redesigned with the rest in DES-3).
+Curses: Glass Bones, Goon Squad.
+(* = event perk. Live: Freight Train, Wrecking Ball, Untouchable. Legendary perks are not in a new
+meta file's unlock list and the unlock UI is TODO: add `unlock=<id>` to rogue_meta.txt to test.)

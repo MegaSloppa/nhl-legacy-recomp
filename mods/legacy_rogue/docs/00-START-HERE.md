@@ -1,6 +1,6 @@
 # 00 - Start here (agent onboarding)
 
-Last reviewed: 2026-10-29 (checkpoint) by Victoria (monday.com agent). Treat file/line references as hints;
+Last reviewed: 2026-11-03 by Kathleen (monday.com agent). Treat file/line references as hints;
 verify against current source.
 
 ## 1. What this is
@@ -25,8 +25,11 @@ Repo: `MegaSloppa/nhl-legacy-recomp`, branch `legacy-rogue` (fork of
 | Mechanism | How | Needs reverse engineering? |
 |---|---|---|
 | Engine tunables | ~10,583 tweak objects (`gXxx`). The parent `ITunableStore` edits the TYPE TAG (N+8) and must not be used for writes. The mod uses `TweakIndex` (`include/rogue/tweak_index.h`): live value N+32 + heap copy H+36 (CONFIRMED). Which tunables are read by code: TUN-9 catalog + `tools/find_tweak_consumers.py --catalog`. | No |
-| Function hooks | Strong-override a generated function: `REX_EXTERN(__imp__sub_X); extern "C" REX_FUNC(sub_X) { pre; __imp__sub_X(ctx, base); post; }`. Pattern proven in `../../src/diag_hooks.cpp`. Registers: `ctx.r3..r10` (args), guest memory via `base + va + REX_PHYS_HOST_OFFSET(va)`, big-endian. | Yes - addresses |
+| Function hooks | Strong-override a generated function: `REX_EXTERN(__imp__sub_X); extern "C" REX_FUNC(sub_X) { pre; __imp__sub_X(ctx, base); post; }`. Pattern proven in `../../src/diag_hooks.cpp` and used live since 2026-10-30 (hit contact, reaction choice; addresses.h). Registers: `ctx.r3..r10` (args), guest memory via `base + va + REX_PHYS_HOST_OFFSET(va)`, big-endian. | Yes - addresses |
 | Host-side UI/FX/save | ImGui panel in the existing overlay, ImGui foreground draw list for FX, `PlaySoundW` for sfx, key=value text saves next to the exe. | No |
+
+Since round 9 (2026-11-03) the mod finds the pro itself (cached pointer, gated) and starts / ends the
+BAP game from the game's state machine, polled in `rogue::Tick`; `NHL_ROGUE_AUTO=0` restores the manual flow.
 
 Key trick: most tunables are global (they buff everyone, CPU included). Make them per-player by
 (a) using the `gTweakByGameStyle*Level` (human) vs `*LevelCPU` split, or
@@ -82,7 +85,7 @@ mods/legacy_rogue/
     run_state.h                 career run, Hype, Notoriety, shop, Legacy
     reactions.h                 Notoriety tier -> league reaction tunable mods
     fx.h                        feedback effects queue
-    addresses.h                 CONFIRMED guest addresses only (all TODO today)
+    addresses.h                 CONFIRMED guest addresses (hit pipeline, game state, BAP player)
     rogue_mod.h                 entry points the host app calls; rogue::Enabled()
     probe.h                     diagnostics: snapshots, catalog (TUN-9), write tests, RE-1 hooks
     tweak_index.h               live tweak object index by name (N+32 + heap copy); perk write path

@@ -30,6 +30,10 @@ static const std::vector<PerkDef> kPerks = {
    {}, {{EventKind::kCheckAlwaysFloors, 1.0f, 0.f}}},
   {"shockwave", "Shockwave", "Big hits knock down nearby opponents.", Rarity::kLegendary,
    Scope::kBapScoped, 1, {}, {{EventKind::kCheckShockwave, 2.5f, 0.f}}},
+  // Rules (event perk, LIVE 2026-11-03): the penalty decision sub_83487DC0 is cancelled when the
+  // offender is the pro. Round 9 test: 6 / 6 infractions uncalled, no side effects seen.
+  {"untouchable", "Untouchable", "The refs never call a penalty on you.", Rarity::kLegendary,
+   Scope::kBapScoped, 1, {}, {{EventKind::kPenaltyImmunity, 1.0f, 0.f}}},
   // Skating / line
   {"jets", "Jet Skates", "Speed burst is faster and accelerates harder.", Rarity::kCommon,
    Scope::kGlobal, 3, {{"gSpeedBoostEnergyMaxSpeedScale", ModOp::kMul, 1.12f},  // stock 1.0

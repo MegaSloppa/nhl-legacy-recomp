@@ -22,6 +22,12 @@ std::vector<ShopOffer> g_offer;
 GameStats g_manual;
 char g_career[64] = "career-1";
 int g_won = 1;
+const char* GameStateName(int32_t s) {
+  static const char* n[] = {"PRE_GAME", "PRE_FACEOFF", "SYNCHING", "FACEOFF", "GAME_ON", "GOOF_OFF",
+                            "PREFIGHT", "FIGHT", "POSTFIGHT", "DONE", "STORYTELLER", "NISVIEWER",
+                            "PRACTICE_GOOFOFF", "TUTORIAL_GOOFOFF"};
+  return (s >= 0 && s < 14) ? n[s] : "none";
+}
 const char* RarityName(Rarity r) {
   static const char* n[] = {"Common", "Rare", "Epic", "Legendary"};
   return n[int(r)];
@@ -135,6 +141,24 @@ void DrawDiagnostics() {
   ImGui::TextDisabled("%s", probe::Status());
   DrawHitWatch();
 
+  ImGui::SeparatorText("Penalty immunity test (round 9)");
+  bool pit = probe::PenaltyImmunityTest();
+  if (ImGui::Checkbox("Never call a penalty on my pro", &pit)) probe::SetPenaltyImmunityTest(pit);
+  ImGui::SameLine();
+  ImGui::TextDisabled("blocked so far: %d (logged to rogue_probe_s.txt)", probe::PenaltyImmunityBlocked());
+
+  ImGui::SeparatorText("Contact floor test (round 10)");
+  ImGui::TextWrapped("Your light contacts on opposing skaters become normal hits. Lower = more contacts count.");
+  const float fl = probe::ContactFloorTest();
+  const float fopts[] = {0.f, 0.3f, 0.2f, 0.1f};
+  const char* flabels[] = {"off", "from 0.30", "from 0.20", "from 0.10"};
+  for (int i = 0; i < 4; ++i) {
+    if (i) ImGui::SameLine();
+    if (ImGui::RadioButton(flabels[i], fl == fopts[i])) probe::SetContactFloorTest(fopts[i]);
+  }
+  ImGui::SameLine();
+  ImGui::TextDisabled("promoted so far: %d", probe::ContactFloorPromoted());
+
   ImGui::SeparatorText("Write test (TUN-10 hip checks)");
   ImGui::TextWrapped("Writes the field the game's code reads (or every game-style table entry). "
                      "Restore, or restart the game, to undo. Every write is logged to rogue_probe.txt.");
@@ -226,13 +250,26 @@ void DrawPanel() {
     OpenShop();
   }
 
-  ImGui::SeparatorText("Manual (until lifecycle/stat hooks are mapped)");
-  if (ImGui::Button("BAP game started")) {
+  ImGui::SeparatorText("This game");
+  {
+    const GuestGame g = PollGuestGame();
+    if (!g.valid)
+      ImGui::TextDisabled("Game state: not readable yet");
+    else
+      ImGui::Text("Game state: %s, %s%s", GameStateName(g.state),
+                  g.match ? (g.bap ? "Be-A-Pro match" : "match (not Be-A-Pro)") : "no match",
+                  InBapGame() ? (AutoStarted() ? "  |  game started automatically" : "  |  game started by hand") : "");
+    if (!AutoLifecycle()) ImGui::TextDisabled("Automatic start / end is off (NHL_ROGUE_AUTO=0).");
+  }
+  if (AwaitingResult())
+    ImGui::TextColored(ImVec4(1.f, 0.8f, 0.2f, 1.f),
+                       "Game over detected, perks are off. Set Won / Lost and your line, then press BAP game ended.");
+  if (!InBapGame() && ImGui::Button("BAP game started (only if it did not start by itself)")) {
     OnBapGameStart();
     probe::ResetPlayers();  // round 8: no player objects from an earlier game
   }
-  // RE-2 is not solved: you tell the mod which player is yours, once per game. During the game,
-  // right after a check: "I hit" if your pro delivered the latest contact, "I got hit" if he took it.
+  // Round 9: the pro is found automatically (game memory). The claim buttons override it, for the
+  // case the automatic pro is ever wrong: right after a check, "I hit" / "I got hit".
   ImGui::BeginDisabled(!InBapGame());
   if (ImGui::Button("That was me: I hit") && LastContactHitter()) {
     SetBapPlayer(LastContactHitter());
@@ -244,11 +281,19 @@ void DrawPanel() {
     probe::DumpPlayersForClaim(BapPlayer());
   }
   ImGui::EndDisabled();
+  const uint32_t auto_pro = InBapGame() ? AutoBapPlayer() : 0u;
   if (BapPlayer())
-    ImGui::Text("Your pro: %04X  |  this game: %d hits, %d knockdowns (counted by the mod)",
-                unsigned(BapPlayer() & 0xFFFFu), r.live.hits, r.live.knockdowns);
+    ImGui::Text("Your pro (claimed by hand): %04X%s  |  this game: %d hits, %d knockdowns (counted by the mod)",
+                unsigned(BapPlayer() & 0xFFFFu),
+                auto_pro ? (auto_pro == BapPlayer() ? ", automatic agrees" : ", AUTOMATIC DIFFERS") : "",
+                r.live.hits, r.live.knockdowns);
+  else if (auto_pro)
+    ImGui::Text("Your pro (automatic): %04X  |  this game: %d hits, %d knockdowns (counted by the mod)",
+                unsigned(auto_pro & 0xFFFFu), r.live.hits, r.live.knockdowns);
   else if (InBapGame())
-    ImGui::TextDisabled("Your pro is not claimed yet: make a check, then press That was me.");
+    ImGui::TextDisabled("Your pro is not found yet: make a check, then press That was me.");
+  else if (AwaitingResult())
+    ImGui::Text("Last game: %d hits, %d knockdowns (counted by the mod)", r.live.hits, r.live.knockdowns);
   ImGui::RadioButton("Won", &g_won, 1); ImGui::SameLine(); ImGui::RadioButton("Lost", &g_won, 0);
   ImGui::SetNextItemWidth(90); ImGui::InputInt("G", &g_manual.goals); ImGui::SameLine();
   ImGui::SetNextItemWidth(90); ImGui::InputInt("A", &g_manual.assists); ImGui::SameLine();

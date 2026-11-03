@@ -250,6 +250,10 @@ std::atomic<bool> g_started{false};
 std::atomic<bool> g_slots_dumped{false};
 std::atomic<int> g_post_logs{0};
 std::atomic<uint32_t> g_last_mgr{0};
+std::atomic<bool> g_pen_immunity{false};  // round 9 behaviour test
+std::atomic<int> g_pen_blocked{0};
+std::atomic<float> g_floor_min{0.f};  // round 10 contact floor test
+std::atomic<int> g_floor_promoted{0};
 
 void Log(const char* fmt, ...) {
   char buf[1024];
@@ -277,7 +281,7 @@ struct Budget {
     return n.fetch_add(1) < max_per_sec;
   }
 };
-Budget g_b_contact, g_b_decide;
+Budget g_b_contact, g_b_decide, g_b_floor;
 
 uint8_t* VBase() {
   auto* ks = rex::runtime::current_kernel_state();
@@ -402,16 +406,17 @@ extern "C" REX_FUNC(sub_8330C890) {
         U8(base, kVaBapFlag), U32(base, kVaBapCache), lr);
 }
 
-// C. Goal: r3 scorer, r4 assister (or 0), r9 kind (compared with 0 / 2).
+// C. Goal: r3 scorer, r4 = the goalie scored on (round S1: NOT the assister), r9 kind (0 / 2).
+// Simulated play ("sim to next shift") scores without calling this (round S1).
 REX_EXTERN(__imp__sub_83480248);
 extern "C" REX_FUNC(sub_83480248) {
   const bool on = rogue::probe::Enabled();
-  const uint32_t scorer = ctx.r3.u32, assist = ctx.r4.u32, kind = ctx.r9.u32;
+  const uint32_t scorer = ctx.r3.u32, goalie = ctx.r4.u32, kind = ctx.r9.u32;
   const unsigned long long lr = (unsigned long long)ctx.lr;
   if (on) {
     Start();
-    Log("goal scorer=%08X idx=%d team=%d who=%s assist=%08X idx=%d who=%s r9=%d period=%d lr=%08llX", scorer,
-        Idx(base, scorer), Team(base, scorer), Who(base, scorer), assist, Idx(base, assist), Who(base, assist),
+    Log("goal scorer=%08X idx=%d team=%d who=%s goalie=%08X idx=%d team=%d r9=%d period=%d lr=%08llX", scorer,
+        Idx(base, scorer), Team(base, scorer), Who(base, scorer), goalie, Idx(base, goalie), Team(base, goalie),
         int32_t(kind), int32_t(U32(base, kVaPeriod)), lr);
   }
   __imp__sub_83480248(ctx, base);
@@ -444,22 +449,8 @@ extern "C" REX_FUNC(sub_83328180) {
   __imp__sub_83328180(ctx, base);
 }
 
-// C. Penalty decision: r4 -> {+4 offender, +8 victim, +12 type}; result r3 (1 = call it).
-REX_EXTERN(__imp__sub_83487DC0);
-extern "C" REX_FUNC(sub_83487DC0) {
-  const bool on = rogue::probe::Enabled();
-  const uint32_t rec = ctx.r4.u32;
-  uint32_t off = 0, vic = 0, type = 0;
-  if (on && HeapPtr(rec)) { off = U32(base, rec + 4); vic = U32(base, rec + 8); type = U32(base, rec + 12); }
-  const unsigned long long lr = (unsigned long long)ctx.lr;
-  __imp__sub_83487DC0(ctx, base);
-  if (on && g_b_decide.Take(10)) {
-    Start();
-    Log("pen-decide result=%u type=%d offender=%08X idx=%d who=%s victim=%08X idx=%d who=%s lr=%08llX",
-        ctx.r3.u32 & 0xFFu, int32_t(type), off, Idx(base, off), Who(base, off), vic, Idx(base, vic),
-        Who(base, vic), lr);
-  }
-}
+// C. Penalty decision sub_83487DC0: hooked in rogue_hooks.cpp since 2026-11-03 (perk Untouchable);
+// it calls rogue::probe::PenaltyDecided below for the pen-decide / pen-immunity lines.
 
 // C. Penalty applied: r4 offender, r5 victim, r6 flags, r7 type.
 REX_EXTERN(__imp__sub_83485BD0);
@@ -487,3 +478,52 @@ extern "C" REX_FUNC(sub_82FEC310) {
   Log("event-manager mgr=%08X vtable=%08X slot0=%08X post(slot1)=%08X slot2=%08X", mgr, vt,
       InImage(vt) ? U32(base, vt) : 0u, InImage(vt) ? U32(base, vt + 4) : 0u, InImage(vt) ? U32(base, vt + 8) : 0u);
 }
+
+// ---------------------------------------------------------------- round 9 public helpers
+namespace rogue::probe {
+void StaticNote(const char* msg) {
+  if (!Enabled() || !msg) return;
+  Start();
+  Log("note %s", msg);
+}
+void PenaltyDecided(uint32_t off, uint32_t vic, uint32_t type, uint32_t result, bool blocked,
+                    unsigned long long lr) {
+  if (!Enabled()) return;
+  const uint8_t* vb = VBase();
+  if (!vb) return;
+  if (blocked) {
+    const int n = g_pen_blocked.fetch_add(1) + 1;
+    Start();
+    Log("pen-immunity BLOCKED #%d type=%d offender=%08X idx=%d victim=%08X idx=%d lr=%08llX", n, int32_t(type),
+        off, Idx(vb, off), vic, Idx(vb, vic), lr);
+  }
+  if (g_b_decide.Take(10)) {
+    Start();
+    Log("pen-decide result=%u type=%d offender=%08X idx=%d who=%s victim=%08X idx=%d who=%s lr=%08llX", result,
+        int32_t(type), off, Idx(vb, off), Who(vb, off), vic, Idx(vb, vic), Who(vb, vic), lr);
+  }
+}
+void SetPenaltyImmunityTest(bool on) {
+  if (g_pen_immunity.exchange(on) != on && Enabled()) {
+    Start();
+    Log("pen-immunity test %s", on ? "ON" : "OFF");
+  }
+}
+bool PenaltyImmunityTest() { return g_pen_immunity.load(); }
+int PenaltyImmunityBlocked() { return g_pen_blocked.load(); }
+void SetContactFloorTest(float min_power) {
+  if (g_floor_min.exchange(min_power) != min_power && Enabled()) {
+    Start();
+    Log("contact-floor test min=%.2f", double(min_power));
+  }
+}
+float ContactFloorTest() { return Enabled() ? g_floor_min.load() : 0.f; }
+void NoteContactFloorPromoted() {
+  const int n = g_floor_promoted.fetch_add(1) + 1;
+  if (Enabled() && g_b_floor.Take(5)) {
+    Start();
+    Log("contact-floor PROMOTED #%d (min=%.2f)", n, double(g_floor_min.load()));
+  }
+}
+int ContactFloorPromoted() { return g_floor_promoted.load(); }
+}  // namespace rogue::probe

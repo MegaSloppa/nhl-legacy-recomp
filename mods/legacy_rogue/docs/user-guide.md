@@ -211,6 +211,45 @@ What the agent looks for: `cache==claim:yes` in `sample` lines (RE-2), the `stat
 order, `goal` / `pen-*` lines whose `who=` tags match your notes, one `event-manager` line with
 the post function, and one `slots begin` block.
 
+### 4h. Round 9: automatic pro, automatic game start / end, penalty immunity test (2026-11-03, Kathleen)
+
+**Build: incremental is enough (`scripts\_build_vkffx_incr.bat`); no new files, no CMakeLists change.**
+Delete old `rogue_probe.txt` and `rogue_probe_s.txt`, launch `run_probe.bat`. Have a Legacy Rogue
+career active (the auto start needs one).
+1. **Exhibition first, 2 minutes.** Panel, "This game": it should say `match (not Be-A-Pro)` and the
+   game must NOT say "started automatically". If it does, stop and tell the agent (safety check:
+   perks must never apply outside Be-A-Pro). Quit the exhibition.
+2. **Be-A-Pro game. Do NOT press "BAP game started" and do NOT claim.** After loading, the panel should
+   say `Be-A-Pro match | game started automatically` and `Your pro (automatic): XXXX`. Your hits should
+   count up in that line. Note if it ever says "not found".
+3. **Penalty test.** Diagnostics: tick **Never call a penalty on my pro**. Try for 2-3 penalties
+   (hook, trip, interference). Note the game clock and what you saw: no arm raised? play went on?
+   Then untick it and take one more penalty (control: it should be called normally).
+4. **Play to the end.** At game over a "GAME OVER" popup shows and the panel turns yellow: perks are
+   already off. Set **Won / Lost correctly**, enter your line, press **BAP game ended**.
+5. Screenshot your pro's **attribute / ratings screen** (any menu that lists all his ratings).
+6. Upload `rogue_probe_s.txt`, `rogue_probe.txt`, the screenshot and your notes.
+
+If anything misbehaves: set `NHL_ROGUE_AUTO=0` before launching to get the old manual flow back.
+
+### 4i. Round 10: contact floor test (2026-11-03, Kathleen)
+
+Incremental build. Delete old logs, launch `run_probe.bat`, start a BAP game (it starts by itself;
+now at PRE_GAME, not before). In Diagnostics, **Contact floor test**: your light contacts on
+opposing skaters become normal hits (not knockdowns).
+1. Play a few minutes on **off** to get a baseline feel.
+2. Then a few minutes each on **from 0.30**, **from 0.20**, **from 0.10**. Note for each: did more of
+   your attempted checks count? did glancing brushes you did not mean as checks turn into hits
+   (too much)? did anything look broken? Write down the "promoted so far" count at each switch.
+3. Upload `rogue_probe_s.txt`, `rogue_probe.txt` and your notes.
+
+### 4j. Perk Untouchable (2026-11-03)
+
+The refs never call a penalty on your pro. To get it into the shop now (no unlock UI yet): close the
+game, add the line `unlock=untouchable` to `rogue_meta.txt` next to the exe, start the game, open the
+Perk Shop (reroll until it shows; it is Legendary, 400 Hype). In a BAP game a cancelled call shows
+"NO CALL". Works without the probe. Same trick for Wrecking Ball: `unlock=wrecking_ball`.
+
 ## 5. Starting a fresh agent session
 
 Paste:

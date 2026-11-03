@@ -3,7 +3,8 @@
 //      them too.
 //   2. EVENT effects (need hooks, see addresses.h): run inside guest hooks for the BAP player
 //      only. Live since 2026-10-30: kHitPowerBoost and kCheckAlwaysFloors (reaction choice hook,
-//      rogue_hooks.cpp; needs the pro claimed in the panel each game).
+//      rogue_hooks.cpp) and kPenaltyImmunity (penalty decision hook, 2026-11-03). Since round 9 the
+//      pro is found automatically (claim buttons = override).
 #pragma once
 #include <cstdint>
 #include <vector>
@@ -25,6 +26,7 @@ enum class EventKind : uint8_t {
   kCheckShockwave,      // p0 = radius (m): floors nearby opponents too (needs a force-fall)
   kGoalHeal,            // p0 = energy restored on goal (needs RE-5/6)
   kHitPowerBoost,       // p0 = extra hit power per stack, 0.15 = +15% (LIVE)
+  kPenaltyImmunity,     // p0 = chance 0..1 that a penalty call on the pro is cancelled (LIVE 2026-11-03)
 };
 
 struct EventEffect { EventKind kind = EventKind::kNone; float p0 = 0, p1 = 0; };

@@ -1,6 +1,6 @@
 # Current status (AUTHORITATIVE)
 
-Last updated: 2026-11-02 (19:45) by Amy (monday.com agent). If this disagrees with another doc,
+Last updated: 2026-11-03 (12:15) by Kathleen (monday.com agent). If this disagrees with another doc,
 this wins; fix the other doc.
 
 ## Baseline
@@ -31,6 +31,40 @@ this wins; fix the other doc.
   Every setup problem hit so far and its fix: `user-guide.md` section 7.
 - GitHub: agents can READ the fork but writes fail from the agent's connection. Deliver changes
   as a zip of changed files only (00-START-HERE rule 12).
+
+## Checkpoint 2026-11-03 (12:15): perk Untouchable; commit of rounds 9-11
+
+Owner skipped the contact floor test for now (4i stays available) and asked for penalty immunity as
+a Legendary perk. Added **Untouchable** (`untouchable`, Legendary, 1 stack, event kPenaltyImmunity):
+the penalty decision hook now lives in `rogue_hooks.cpp` (moved out of the S1 probe, which logs
+through `probe::PenaltyDecided`); a cancelled call shows "NO CALL". Not run in game yet. Legendary
+perks are not unlockable in the UI yet: add `unlock=untouchable` to `rogue_meta.txt` to see it in the
+shop. Owner commits this package (rounds 9-11, commit message in handoff-log).
+
+## Session 2026-11-03 (11:45): round 9 passed; round 10 package (contact floor test)
+
+Owner ran round 9 (exhibition period + one BAP game with no claim). Results: re-findings.md "Round 9
+results". Automatic pro CONFIRMED (2 games, BAP flag 0 in exhibition), penalty immunity CONFIRMED
+(6 infractions blocked, control called normally), full rating id map CONFIRMED from the pro's
+attribute screens. Auto start came ~9 s early (state left over from the exhibition): round 10 also
+waits for the pro pointer. Owner feedback: checks rarely connect; data: 60 contact episodes with
+opponents, 11 hits. Round 10 (no new .cpp): start gate fix + contact floor test (user-guide 4i).
+
+## Session 2026-11-03: probe S1 + round 8 analysed; round 9 package (auto pro, auto game start / end)
+
+Owner ran BUILD-13 (S1 probe compiled and ran) and round 8 in one BAP game played to the end
+(notes 1-13, handoff-log). Results: re-findings.md "Round S1 + round 8 results". Key points:
+- **RE-2: the game caches the pro at 0x83C876D4** from game load on; it matched the claim all game and
+  the +0x22C marker scan agreed (only the pro, only while on the ice). Gate: match 0x83C1E89C != 0 and
+  BAP flag 0x83AC5F63 != 0 (after the match the word points at a re-used object).
+- **Game state machine confirmed**: PRE_GAME at load, DONE once at game end, STORYTELLER intermissions.
+- Goal hook r4 is the goalie scored on (not the assister); simulated goals skip it.
+- Penalty decide / apply registers right; decide fires at the infraction (~5 s before the whistle).
+- Puck contact hook unclear; event post function = 0x8299E478.
+Round 9 package (no new .cpp, incremental build): automatic pro + automatic BAP game start / game
+over (perks revert at DONE), penalty immunity behaviour test (probe), docs. user-guide 4h.
+The owner's game was recorded as a WIN by mistake (Lost not ticked): +20 Hype x multiplier; fix by
+editing `hype=` in `rogue_career.txt` if wanted.
 
 ## Session end 2026-11-02 (19:45): static map extended + probe round S1 written
 
@@ -195,8 +229,10 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 | BUILD-9 | Build the 2026-10-30 13:45 package (hit contact hook + round 5 hit watch, incremental) | U | DONE 2026-10-30 (round 5 ran) |
 | BUILD-10 | Build the 2026-10-30 17:45 package (claim + round 6, incremental) | U | DONE 2026-10-30 (round 6 ran) |
 | BUILD-11 | Build the 2026-10-30 18:45 checkpoint (first event perks + round 7), commit + push | U | DONE 2026-10-30 (0290eb7); round 7 exhibition part ran 2026-10-31 |
-| BUILD-12 | Round 8 marker scan (edited in the local repo by the agent, 2026-10-31): incremental build, run user-guide 4f, commit + push | A+U | ACTIVE: edits applied, incremental build PASSED 2026-10-31 (agent, `_build_vkffx_incr.bat`; only the existing fopen/getenv warnings). Owner: 4f run, commit + push |
-| BUILD-13 | Build PROBE-S1 (`src/rogue_static_probe.cpp`, added to CMakeLists): `scripts\_game_ffx_build.bat`, then user-guide 4g; commit + push | U | TODO (written 2026-11-02, not compiled by the agent) |
+| BUILD-12 | Round 8 marker scan | A+U | DONE 2026-11-03 (owner ran 4f in one BAP game; results in re-findings.md) |
+| BUILD-13 | Build PROBE-S1 + user-guide 4g | U | DONE 2026-11-03 (`_game_ffx_build.bat`, compiled first time; one BAP game logged) |
+| BUILD-14 | Round 9 package (auto pro, auto start / game over, penalty immunity test) | U | DONE 2026-11-03 (built incrementally, 4h run: all checks passed) |
+| BUILD-15 | Rounds 10-11 package (start gate fix, contact floor test, perk Untouchable): `scripts\_build_vkffx_incr.bat`; commit + push | U | ACTIVE: owner commits 2026-11-03 12:15 (stub syntax check PASS, not compiled against the SDK yet). 4i (contact floor) optional, later |
 | PARENT-1 | Tell the parent project: its Engine Tunables editor / `ITunableStore` writes record+8 (the type tag) instead of the live value N+32 (+ heap copy H+36); its `gDekeRatEffect` sanity value comes from the registration pool. Evidence: re-findings.md. Owner decides how to report (issue / PR) | Owner (agent drafts) | TODO |
 
 ### Bugs
@@ -226,16 +262,16 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 |---|---|---|---|
 | RE-0 | Run `tools/find_bap_code.py` on the decompressed image, upload report | U | TODO (low; the sweep approach works better) |
 | RE-1 | Check resolution (hitter/hittee) | A+U | DONE 2026-10-30 for detection: hit contact `sub_833E0BF8` (r3 victim, r4 hitter) + knockdown reaction 0x83ABF598 CONFIRMED (rounds 3-4), in addresses.h. Changing hit outcomes needs the decision point: RE-3 / CHECK_RESOLVE (`sub_83429560`) |
-| RE-2 | Identify the BAP-controlled skater | A+U | ACTIVE. Interim claim works (round 6). Marker byte +0x22C: 0x00 on the pro in BAP (round 6), 0x06 on the controlled player in exhibition, 0xFF on everyone else (round 7), so the test is now != 0xFF. Round 8 (user-guide 4f): BAP game(s) with the marker scan. Two clean BAP games -> CONFIRMED -> automatic claim. STATIC lead 2026-11-02: cached BAP player pointer 0x83C876D4 (static-map.md section 7) |
+| RE-2 | Identify the BAP-controlled skater | A+U | DONE 2026-11-03: 0x83C876D4 (gated on match + BAP flag) CONFIRMED over 2 BAP games, 0 in exhibition; used by every hook since round 9. Claim buttons stay as an override |
 | RE-3 | Knockdown: fall entry point or skater balance offset | A+U | DONE 2026-10-30 for hit outcomes: power -> reaction table (CONFIRMED), Freight Train / Wrecking Ball built on it. A force-fall for non-contact effects (Shockwave on nearby players, crit slap) is still open: lead `sub_83429560` called for another victim |
-| RE-4 | Puck-vs-skater contact | A+U | TODO. STATIC lead 2026-11-02: `sub_83328180` (r3 puck, r4 victim, r5 code; shooter = players[puck+180]); posts PuckHitPlayer / BlockShot |
-| RE-5 | BAP game start / end + final score + BAP player's stat line | A+U | TODO: the PE_* handlers never run. Next lead: post-game screens / XP award code. STATIC leads 2026-11-02: state machine `sub_8330C890` (DONE = game end), period end `sub_8331F408`, goal `sub_83480248`, period 0x83C876B8 |
-| RE-6 | BAP stat-event stream. Lead: `gBeAPro_*_StatEvent` tunables; hit credit pair `sub_83589B38` + `sub_8357F9A0` (from `sub_8358A1D0` / `sub_835A7078`) may be the hit stat | A+U | TODO. STATIC 2026-11-02: the game's own GameEvent stream (game_events.tsv); one hook on the post function would see every event |
+| RE-4 | Puck-vs-skater contact | A+U | TODO. S1: `sub_83328180` fires but the shooter field (puck+180) is always -1 and the codes are unclear; re-slice (static-map.md 15, item 4) |
+| RE-5 | BAP game start / end + final score + BAP player's stat line | A+U | PARTIAL 2026-11-03: start / end from the state machine (PRE_GAME / DONE, CONFIRMED, round 9 uses it). Final score still open: goal calls miss simulated goals, so the score must be read (static-map.md 15, item 2) |
+| RE-6 | BAP stat-event stream | A+U | TODO. Event post function = 0x8299E478 (S1); slice it next (static-map.md 15, item 1) |
 | RE-7 | BAP career save identity | A+U | TODO |
 | RE-8 | BAP progression storage (lead: `BAP_PLAYER_GROWTH` @ 0x82035818) | A+U | TODO |
 | RE-9 | Meta reactions: contracts, trades, line promotion, task grading | A+U | TODO |
-| RE-10 | Penalty call decision (for a "no checking penalties" perk). Lead: `sub_83310E68` (reads gHandlePotentialKnockedOverPenaltiesTime) ran twice in round 3 with r3=0x0D | A+U | STATIC DONE 2026-11-02 (Amy, static-map.md section 10): decide `sub_83487DC0(off, rec, contact)` (rec+4 offender, rec+8 victim, returns 1 = call), apply `sub_83485BD0(off, offender, victim, ...)` (every penalty). Immunity perk = override `sub_83485BD0`, skip when r4 == BAP player. Needs a probe before addresses.h |
-| RE-11 | BAP player's live ratings in memory (for perks past 99). Round 4 player-object dumps may help | A+U | ACTIVE (static, Amy 2026-11-02): rating getter `sub_83501A68(player, attrId)` (115 callers; 15 endurance, 12 aggressiveness, 18 strength, 19 fighting, HYPOTHESIS); energy player+360; skater object 1968 bytes. static-map.md section 11 |
+| RE-10 | Penalty call decision ("no penalties" perk) | A+U | DONE 2026-11-03: forcing `sub_83487DC0` to 0 for the pro blocks the call (6/6). Perk Untouchable built on it (rogue_hooks.cpp), first in-game check pending |
+| RE-11 | BAP player's live ratings in memory | A+U | ACTIVE: raw ratings +1240 + 4 * id, full id map CONFIRMED 2026-11-03 (re-findings.md Round 9). Next: behaviour test of an override of `sub_83501A68` for the pro (ratings past 99) |
 
 ### Feedback effects
 | ID | Task | Who | Status |
@@ -251,19 +287,16 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 |---|---|---|---|
 | DES-1 | Pick the win/loss structure (design.md section 6) | Owner | TODO |
 | DES-2 | Balance pass: Hype income vs prices over an 82-game season | A | TODO |
+| DES-4 | Checking feel (owner 2026-11-03): checks rarely connect, aiming a check loses speed. Data: 60 contact episodes / 11 hits in a game. Options: contact floor (round 10 test), stronger pro hit power (Freight Train), check-assist tunables (global, need scoping), ignore the aim slowdown | Owner + A | ACTIVE (round 10 test) |
 | DES-3 | Perk system shape (owner 2026-10-30): maybe no stacking, perks much more expensive but much more powerful; risks: nothing left to buy too soon, a run that is overpowered and no longer fun later, and an early run that is just standard NHL. Owner wants something special from game 1. Agent to propose options (e.g. a strong starting "archetype" perk, perks that evolve or have drawbacks, Notoriety-scaled opposition, Hype sinks such as rerolls / temporary boosts / Legacy) in design.md | Owner + A | TODO |
 
 ## Recommended next action
 
-1. Owner: commit + push (2026-11-02 package; message in the session reply / handoff-log).
-2. Owner, next game session: BUILD-13 (`_game_ffx_build.bat`), then user-guide **4g** (static probe
-   S1) and **4f** (round 8 marker scan) in the same BAP session. Upload `rogue_probe_s.txt`,
-   `rogue_probe.txt` and notes (game clock of goals, penalties, shot blocks, intermission).
-3. Agent with the logs: read them with static-map.md section 14.2; promote ledger rows; RE-2
-   decision (0x83C876D4 vs +0x22C marker); then the first hooks into addresses.h only after the
-   behaviour tests (penalty immunity and rating boost are the cheapest to test).
-4. Agent without logs (static only): static-map.md section 14.3 queue (force fall first).
-5. Later: DES-3 options in design.md; refresh 00-START-HERE.md mechanism table.
+1. Owner: build (incremental), commit + push. Next BAP game: own Untouchable (`unlock=untouchable`
+   in rogue_meta.txt, buy it) and check that penalties are not called and "NO CALL" shows.
+2. Agent: a rating override test (`sub_83501A68`, ratings past 99); a checking perk once the owner
+   wants to try the contact floor (4i); an unlock UI for Legendary perks (design.md section 5).
+3. Static, optional: event dispatch `sub_8299E478`, final score (static-map.md 15).
 
 ## How to verify the branch state without the owner
 

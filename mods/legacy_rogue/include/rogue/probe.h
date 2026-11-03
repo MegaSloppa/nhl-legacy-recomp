@@ -76,6 +76,24 @@ float PowerTest();
 void DumpPlayersForClaim(uint32_t me);
 // Round 8: clear the collected player list (start of a game). Refilled by the team query.
 void ResetPlayers();
+
+// Static-map probe (rogue_static_probe.cpp, rogue_probe_s.txt). Round 9 additions:
+void StaticNote(const char* msg);         // one "note" line (lifecycle events from rogue_mod.cpp)
+// Penalty immunity behaviour test: the penalty decision sub_83487DC0 returns 0 when its offender is
+// the pro (rogue::ProPlayer). Off by default, panel checkbox; every block (test or perk) is logged.
+void SetPenaltyImmunityTest(bool on);
+// Called by the penalty decision hook in rogue_hooks.cpp after every decision (result after any
+// block; blocked = the perk or the test cancelled a call). Logs pen-decide / pen-immunity lines.
+void PenaltyDecided(uint32_t offender, uint32_t victim, uint32_t type, uint32_t result, bool blocked,
+                    unsigned long long lr);
+bool PenaltyImmunityTest();
+int PenaltyImmunityBlocked();
+// Round 10 contact floor test: the pro's contacts on opposing skaters with power >= min_power (and
+// below the hit threshold) become normal hits (rogue_hooks.cpp reaction choice). 0 = off.
+void SetContactFloorTest(float min_power);
+float ContactFloorTest();          // 0 unless the probe is enabled and the test is on
+void NoteContactFloorPromoted();   // called by the hook for every promoted contact
+int ContactFloorPromoted();
 // Used by the guest hooks (rogue_probe.cpp bottom, rogue_hooks.cpp reaction hooks).
 void TeamQueryResult(uint32_t player, uint32_t arg, uint32_t result, unsigned long long lr);
 void ReactionBegin(uint32_t victim, uint32_t hitter);

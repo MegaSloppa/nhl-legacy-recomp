@@ -545,6 +545,10 @@ callers read, the wrong-stick table and the injury classes. CONFIRMED only where
 | 27 | ? (backhand / redirect shot accuracy) | - |
 | 28 | fight-related (gFightRatingWeight) | - |
 
+Round 9 (2026-11-03): the full id map is CONFIRMED against the pro's attribute screens; see
+re-findings.md "Round 9 results" (14 = stick checking, 20 = durability, 24 = offensive awareness,
+25 = defensive awareness; 0 / 1 / 2 = speed / acceleration / agility).
+
 Perk use: an override of `sub_83501A68` keyed on (BAP player, id) gives per-rating perks, e.g.
 "+30 % shot power" = ids 4 + 6, "iron man" = 15, "unstoppable" = 3 + 18.
 
@@ -600,9 +604,9 @@ behaviour test, rule 4) and only then add the define to addresses.h.
 
 | Perk need | Hook / read | Section |
 |---|---|---|
-| BAP player | read 0x83C876D4 | 7 |
+| BAP player | read 0x83C876D4 (in addresses.h since round 9, gated) | 7, 15 |
 | BAP game start / end, intermission | `sub_8330C890` state switch (PRE_GAME / DONE / STORYTELLER) | 9 |
-| Goal | `sub_83480248` (r3 scorer, r4 assister) | 6 |
+| Goal | `sub_83480248` (r3 scorer, r4 goalie scored on; not called for simulated goals) | 6, 15 |
 | Period end | `sub_8331F408` | 7 |
 | Puck hits player / shot block | `sub_83328180` | 7 |
 | Penalty immunity / draw penalties | `sub_83485BD0` / `sub_83487DC0` | 10 |
@@ -610,3 +614,23 @@ behaviour test, rule 4) and only then add the define to addresses.h.
 | Stamina | write player +360 or scale `sub_8350BD80` | 11 |
 | Hit power / knockdowns | `sub_833B9028` (CONFIRMED, already used) | re-findings |
 | Force fall | open (14.3 item 1) | 11, 12 |
+
+## 15. Round S1 results (2026-11-03, Kathleen)
+
+The probe ran for one full BAP game. Results per row of 14.2 are in re-findings.md "Round S1 + round 8
+results". Short version:
+- RE-2 solved in practice: 0x83C876D4 = the pro for the whole game (gate on match + BAP flag).
+- State machine order confirmed; DONE = game over; STORYTELLER = intermission / intro.
+- Goal r4 is the goalie scored on, not the assister. Simulated goals skip `sub_83480248`: the final
+  score must be READ (RE-5), not counted from goal calls.
+- Penalty decide / apply: registers right, decide fires at the infraction.
+- Puck contact `sub_83328180`: unclear (shooter field wrong). Re-slice before using it.
+- Event post function: 0x8299E478.
+
+Updated static queue (replaces 14.3):
+1. Event dispatch: `func sub_8299E478`, `callees sub_8299E478` (one hook for every GameEvent).
+2. Final score (RE-5): readers of the score near the DONE handler `sub_8331EB98` / winner
+   `sub_8330D530`; goal counts are not enough (sim goals).
+3. Force fall (RE-3 open part): `sub_829380A0`, its callers, `sub_834E9FA8`, the snapshot callsites.
+4. Puck contact: `func sub_83328180` again with `callsite sub_83328180 --context 24` (codes, shooter).
+5. Rating ids: needs the pro's attribute screen from the owner (values at +1240).

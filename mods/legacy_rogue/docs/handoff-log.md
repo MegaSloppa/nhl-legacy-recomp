@@ -486,3 +486,79 @@ every .cpp/.h in the repo zip).
 **Hypotheses / unresolved:** all static-map.md entries are CANDIDATE; event post address is
 runtime-only; force-fall reader unknown; rating ids 0-2 order, 16, 21, 24-28.
 **Next action:** BUILD-13 + user-guide 4g / 4f (owner); then log analysis per static-map.md 14.2.
+
+### 2026-11-03 - Kathleen - Probe S1 + round 8 analysed; round 9 package
+**Objective:** Read the owner's first S1 / round 8 logs (one full BAP game) and act on them.
+**Done:**
+- Owner notes (BAP game): 14:09 P1 puck out, whistle, pro to bench; sims to next shift skipped his
+  shifts until 8:46; 8:17 offside, faceoff; 4:09 opponent goal; 2:21 pro penalty (infraction 5-10 s
+  earlier); opponent goal during sim, then intermission; P2 17:09 pro penalty; P2 11:34 wrist shot
+  blocked, blocker had a hit reaction; P2 8:02 pro drew a penalty; P3 5:43 pro penalty; P3 3:30
+  teammate goal; P3 ~1:14 pro hopped over a teammate's shot; game end. Lost, recorded as Won.
+- Analysed both logs (sandbox scripts): results table in re-findings.md, summary in static-map.md 15.
+- Round 9 code: gated auto pro (`ReadAutoBapPlayer`), lifecycle poll in `rogue::Tick` (start on a new
+  BAP match, game over at DONE / match gone: revert perks, wait for the result), kill switch
+  NHL_ROGUE_AUTO=0, panel "This game" section, penalty immunity test in the S1 decide hook, goal log
+  label fixed (goalie).
+**Files changed:** `include/rogue/addresses.h` (state, match, BAP flag, BAP player pointer),
+`include/rogue/rogue_mod.h`, `src/rogue_mod.cpp`, `src/rogue_hooks.cpp`, `src/rogue_panel.cpp`,
+`include/rogue/probe.h`, `src/rogue_static_probe.cpp`, docs (re-findings, static-map, current-status,
+user-guide 4h, 00-START-HERE, this file).
+**Validation:** g++ 11 -std=c++20 -fsyntax-only -Wall -Wextra on the 4 changed .cpp files against stub
+headers: PASS. Lifecycle logic replayed in Python on the S1 state sequence (+ a synthetic 2nd game at the
+same match address): one start at PRE_GAME, one game over at DONE, no restart. Not compiled against the SDK.
+**Proven:** see re-findings.md results table (one game).
+**Hypotheses / unresolved:** exhibition BAP flag value; whether forcing decide to 0 has side effects;
+ratings id map; +364 meaning; puck contact codes. The pointer went into addresses.h at OBSERVED (one
+game, two independent signals) so round 9 can be its behaviour test; NHL_ROGUE_AUTO=0 falls back.
+**Next action:** BUILD-14 + user-guide 4h (owner).
+
+### 2026-11-03 (11:45) - Kathleen - Round 9 passed; round 10 contact floor test
+**Objective:** Read round 9 (exhibition + BAP game, no claim) and act on it.
+**Done:**
+- Owner: exhibition detected as not BAP; after quitting it the state stayed STORYTELLER until the next
+  BAP PRE_GAME; BAP game worked without a claim; penalty prevention worked (no calls, only visible
+  trips); after the game state GAME_ON / no match. Attribute screens for the pro (3 screenshots).
+  Checking feel: contacts often produce no interaction; aiming a check loses speed.
+- Logs: auto pro and BAP flag CONFIRMED, immunity CONFIRMED (6 blocked + a normal control call),
+  rating id map CONFIRMED, auto start ~9 s early (fixed: waits for the pro pointer), contact stats.
+- Round 10 code: start gate; contact floor test (rogue_hooks.cpp reaction choice, opponents only,
+  team byte +48); panel radio; log lines `contact-floor`.
+**Files changed:** `src/rogue_mod.cpp`, `src/rogue_hooks.cpp`, `src/rogue_panel.cpp`,
+`src/rogue_static_probe.cpp`, `include/rogue/probe.h`, `include/rogue/addresses.h` (comments), docs
+(re-findings, static-map, current-status, user-guide 4i, this file). Round 9 files are included again.
+**Validation:** g++ 11 -fsyntax-only -Wall -Wextra on the 4 .cpp files against stub headers: PASS.
+**Proven:** re-findings.md "Round 9 results".
+**Hypotheses / unresolved:** whether a floored contact looks natural; the aim slowdown tunables have no
+static reader (read through the heap copy?); +364; puck contact codes.
+**Next action:** BUILD-15 + user-guide 4i (owner); penalty immunity perk design (owner).
+
+### 2026-11-03 (12:15) - Kathleen - Perk Untouchable; checkpoint commit (rounds 9-11)
+**Objective:** Owner: penalty immunity as a Legendary perk, then commit.
+**Done:** perk `untouchable` (kPenaltyImmunity, p0 1.0, 1 stack); the decide hook moved to
+rogue_hooks.cpp (perk + probe test), probe logs via `probe::PenaltyDecided`; "NO CALL" FX (max 1/s);
+design.md section 8; user-guide 4j (unlock line for testing). Contact floor test left for later.
+**Files changed:** `include/rogue/perks.h`, `src/perk_catalog.cpp`, `src/rogue_hooks.cpp`,
+`src/rogue_static_probe.cpp`, `include/rogue/probe.h`, docs (design, current-status, user-guide, this
+file), plus every round 9-10 file (the zip is cumulative).
+**Validation:** g++ 11 -fsyntax-only -Wall -Wextra against stub headers on rogue_mod, rogue_hooks,
+rogue_static_probe, rogue_panel, perk_catalog, run_state: PASS. No function is overridden twice in
+the repo (scan of every REX_FUNC). Not compiled against the SDK, not run.
+**Proven:** nothing new at runtime.
+**Hypotheses / unresolved:** Untouchable untested in game; Legendary unlock path missing (TODO UI).
+**Next action:** owner build + commit; Untouchable check in the next BAP game (4j).
+
+Commit message (owner, 2026-11-03):
+```
+Legacy Rogue: automatic pro + game lifecycle, perk Untouchable (rounds 9-11)
+
+- Find the Be-A-Pro player automatically: game pointer 0x83C876D4, gated on match + BAP flag
+  (CONFIRMED over 2 BAP games, 0 in exhibition). Claim buttons stay as an override.
+- Start / end the BAP game from the game state machine (PRE_GAME / DONE), polled in rogue::Tick;
+  perks revert at game over; result entry waits for "BAP game ended". NHL_ROGUE_AUTO=0 = manual.
+- New Legendary perk Untouchable: penalty decision sub_83487DC0 cancelled for the pro (hook moved
+  from the S1 probe to rogue_hooks.cpp; "NO CALL" feedback).
+- Probe: penalty immunity test, contact floor test, lifecycle notes, goal log fix (r4 = goalie).
+- Docs: S1 / round 8 / round 9 results, full rating id map, checking data, user-guide 4h-4j.
+```
+

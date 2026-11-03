@@ -13,6 +13,21 @@
 // gBeAPro_* tunable readers, "BAP_PLAYER_GROWTH" (VA 0x82035818).
 // #define ROGUE_ADDR_BAP_GAME_START   82XXXXXX
 // #define ROGUE_ADDR_BAP_GAME_END     82XXXXXX
+// Since round 9 the mod does not hook these: rogue::Tick polls the game state below instead.
+//
+// Game state machine (round S1, 2026-11-03, one full BAP game, re-findings.md "Game state"):
+// the word below is the current state, written by the switch sub_8330C890 (r3 = new state; names
+// from the image table 0x83AA5B20). Seen: -1 -> PRE_GAME (0) once at game load, then FACEOFF /
+// GAME_ON / GOOF_OFF / PRE_FACEOFF / SYNCHING per stoppage, STORYTELLER (10) at intermissions,
+// DONE (9) once, 14 s after the third period end. CONFIRMED for PRE_GAME and DONE.
+#define ROGUE_VA_GAME_STATE         0x83C1D220u
+#define ROGUE_GAME_STATE_PRE_GAME   0
+#define ROGUE_GAME_STATE_DONE       9
+// Match object pointer: non-zero from game load until ~2.5 min after DONE, then 0. CONFIRMED (S1).
+#define ROGUE_VA_MATCH_PTR          0x83C1E89Cu
+// Byte: 1 during the BAP game, 0 once the match pointer is cleared. CONFIRMED in BAP (S1, round 9)
+// and 0 for a whole exhibition period (round 9).
+#define ROGUE_VA_BAP_MODE_FLAG      0x83AC5F63u
 // Period end / intermission - natural point to offer a perk draft.
 // #define ROGUE_ADDR_PERIOD_END       82XXXXXX
 // Goal scored (scorer ptr in a register) - currency, kGoalHeal.
@@ -53,10 +68,16 @@
 // Player object first word = class pointer. Skater 0x82271C10, goalie 0x8223F648 (goalies are
 // roster slots 18-19 / 38-39). CONFIRMED 2026-10-30 (rounds 4-5, 3 sessions).
 #define ROGUE_VA_SKATER_CLASS       0x82271C10u
-// How to tell the BAP-controlled skater apart: NOT FOUND. Byte +0x38 was a reaction state, not a
-// human flag (round 5); sub_834EA6D0 is a team query. Until found, the owner claims his pro in the
-// panel (rogue::SetBapPlayer). CANDIDATE (round 6, one session): byte +0x22C is 0x00 on the
-// claimed player and 0xFF on all 20 others. Round 7 tests it (AUTO tag).
-// #define ROGUE_OFF_SKATER_CONTROLLER 0x0000
+// The BAP-controlled skater: the game's own cached Be-A-Pro player pointer (filled by
+// sub_834DC8A8). CONFIRMED 2026-11-03 (two BAP games; round 9 ran with no claim: hits, goal and
+// penalty immunity all keyed on it correctly; 0 in exhibition). Round S1 + round 8: set from PRE_GAME on,
+// before any claim, and equal to the owner's claim in all 70+ samples after it; the +0x22C marker
+// scan agreed (only this object ever marked, never 2+). Valid ONLY while ROGUE_VA_MATCH_PTR != 0 and
+// ROGUE_VA_BAP_MODE_FLAG != 0: after the match the word keeps the old address while the object is
+// re-used (class changed to 0x822708B0). rogue_hooks.cpp ReadAutoBapPlayer applies that gate plus
+// a skater class check.
+#define ROGUE_VA_BAP_PLAYER_PTR     0x83C876D4u
+// Byte +0x22C (round 8): 0x00 on the pro only while he is on the ice, 0xFF on the bench and on
+// everyone else (0x06 on the controlled player in exhibition). Not used: the pointer above is better.
+// #define ROGUE_OFF_SKATER_CONTROLLER 0x22C
 // #define ROGUE_HUMAN_CONTROLLER_VALUE 0x00
-// #define ROGUE_VA_BAP_PLAYER_PTR     0x00000000

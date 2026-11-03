@@ -28,7 +28,7 @@ CONFIRMED (behavior reproduced: e.g. forcing it changes the game as predicted, 2
 
 ## Static candidates (Amy, 2026-11-02; details in docs/static/static-map.md)
 
-All CANDIDATE (static read only). Probe round S1 (user-guide 4g) tests them; promote a row here
+Round S1 results: see the next section (2026-11-03). Below: the original static rows. Probe round S1 (user-guide 4g) tested them; promote a row here
 only with log evidence. Reaction table entry names (image strings): 0 incidental, 1 nudge,
 2 stumble, 3 stumble fall (= "normal hit" above, 0x83ABF57C), 4 fall (= "knockdown", 0x83ABF598).
 
@@ -45,6 +45,63 @@ only with log evidence. Reaction table entry names (image strings): 0 incidental
 | (ratings) | raw +1240 + 4 * id, effective `sub_83501A68(player, id)` | CANDIDATE | (12, 13) |
 | (energy / injury) | player +360 energy, +368 injury pointer | CANDIDATE | (11, 13) |
 | (players) | 0x83C1D080 players[team * 20 + slot] | CANDIDATE | (8) |
+
+## Round 9 results (Kathleen, 2026-11-03 11:30; exhibition period + one full BAP game, no claim)
+
+| Key | Result | Confidence | Evidence |
+|---|---|---|---|
+| ROGUE_VA_BAP_MODE_FLAG | 0 for a whole exhibition period; 1 in BAP | CONFIRMED | exhibition: match non-zero, flag 0, cache 0, no auto start |
+| ROGUE_VA_BAP_PLAYER_PTR | the pro (this time idx 37, team 1) | CONFIRMED (2 games) | no claim all game; filled at PRE_GAME; goal hook tagged the pro's own goal `who=C`; the immunity test keyed on it |
+| Lifecycle poll | started ~9 s early: at bapflag 1 while the state was still STORYTELLER left over from the exhibition (PRE_GAME came 9 s later); game over at DONE as designed | OBSERVED | round 10 also waits for the pro pointer (filled at PRE_GAME) |
+| Penalty immunity (decide forced to 0 for the pro) | works | CONFIRMED (behaviour) | 6 infractions blocked (8 decide calls: stick infractions, type 6, are decided twice), no call, no arm, play went on (owner). Control with the test off: the pro's next infraction was called normally |
+| After a game | the front end makes a short-lived match (flag 0, state GAME_ON) and leaves state GAME_ON / no match; after an exhibition the state stays STORYTELLER until the next game's PRE_GAME | OBSERVED | harmless: the poll needs flag 1 + a pro |
+
+**Rating id map (CONFIRMED 2026-11-03):** the pro's attribute screens matched the 29 raw values at
++1240 + 4 * id one to one, consistent with every static hint (section 13 of static-map.md):
+0 speed 82, 1 acceleration 81, 2 agility 83, 3 balance 74, 4 wrist shot power 81, 5 wrist shot accuracy
+72, 6 slap shot power 82, 7 slap shot accuracy 70, 8 passing 82, 9 deking 77, 10 puck control 83,
+11 faceoffs 71, 12 aggressiveness 68, 13 body checking 71, 14 stick checking 72, 15 endurance 78,
+17 discipline 78, 18 strength 72, 19 fighting skill 56, 20 durability 75, 22 hand-eye 82, 23 shot
+blocking 62, 24 offensive awareness 83, 25 defensive awareness 71. Not on the screens: 16 = 0,
+21 = 6, 26 = 66, 27 = 74, 28 = 68 (hidden; static: 26 goalie scale, 27 backhand / redirect, 28 fight).
+Ties resolved by the static evidence: 8 / 22 (82) and 11 / 13 / 25 (71) and 10 / 24 (83).
+
+**Checking feel (owner, round 9) + data:** many contacts never become a hit. In round 9 the reaction
+choice ran 338 times for the pro on opponents = 60 contact episodes; only 11 became a hit or
+knockdown. Peak power per episode: 22 below 0.2, 27 in 0.2-0.5, 11 above 0.5 (hit threshold ~0.5).
+So most "slide past" contacts ARE evaluated, with low power. Round 10 tests a floor (user-guide 4i).
+The speed loss while aiming a check is a separate system (candidates: gHitIntentAssist* read by
+`sub_83585028`, gAutoHitTargetRadius / gAutoHitInterceptRadius by `sub_8351AE18`,
+gInteractionCheck*SlowDown* with no static reader yet). All are global tunables.
+
+## Round S1 + round 8 results (Kathleen, 2026-11-03; one full BAP game, owner notes 1-13)
+
+Source: `rogue_probe_s.txt` (880 lines, 2,140 s) + `rogue_probe.txt` (round 8 marker scan), one
+Be-A-Pro game played to the end, claim made at t=165 s. No exhibition this time. Times = seconds
+after the probe started.
+
+| Key | Result | Confidence | Evidence |
+|---|---|---|---|
+| ROGUE_VA_BAP_PLAYER_PTR 0x83C876D4 | the pro (idx 17, team 0) | OBSERVED, in addresses.h for the round 9 behaviour test | Set at PRE_GAME (t=0), before any claim; `cache==claim:yes` in every sample after the claim; the round 8 marker scan (independent) only ever marked this object (1,350 s "one = ME", "several" 0). After the match: match 0, BAP flag 0, the word keeps the old address and the object's class changes to 0x822708B0 (re-used), so the read MUST be gated |
+| ROGUE_VA_GAME_STATE 0x83C1D220 + states | order as named | CONFIRMED (PRE_GAME, DONE) | -1 -> PRE_GAME once at load; STORYTELLER (10) at game intro and each intermission; per stoppage GAME_ON -> GOOF_OFF -> STORYTELLER -> PRE_FACEOFF -> SYNCHING -> FACEOFF -> GAME_ON (23x) or GAME_ON -> PRE_FACEOFF -> ... (21x, no replay); DONE once, 14 s after the third period end |
+| ROGUE_VA_MATCH_PTR 0x83C1E89C, ROGUE_VA_BAP_MODE_FLAG 0x83AC5F63 | 1 / non-zero for the whole BAP game | CONFIRMED in BAP | both drop to 0 at the same sample ~154 s after DONE. Exhibition value still unchecked (round 9) |
+| flow phase 0x83C1D254 | 1 during play, 0 from the last period end | OBSERVED | |
+| period word 0x83C876B8 | 0-based: 0, 1, 2 = periods 1-3 | OBSERVED | 238 after the match |
+| `sub_8331F408` period end | once per period (3x), r3 flag 0 | OBSERVED | intermission note 6 |
+| `sub_83480248` goal | r3 = scorer. **r4 = the goalie scored on, NOT the assister** | OBSERVED | opponent goal (note 4): r4 = idx 18 (own goalie); teammate goal (note 11): r4 = idx 38 (their goalie). Simulated play does NOT call it (note 6: opponent goal during sim, no line). Only 2 goal lines in the game |
+| `sub_83487DC0` penalty decide | rec+4 offender, +8 victim right; returns 1 = called | OBSERVED | 50 decisions, 10 called. Fires at the INFRACTION, ~5 s before the whistle (note 5). lr 0x8357F858 = body contact (types 0/2/3), 0x8358BE30 (type 7) and 0x8358B11C (type 6) = other infractions |
+| `sub_83485BD0` penalty apply | r4 offender, r5 victim right; r7 = penalty type (different numbering from decide) | OBSERVED | notes 5, 7, 10 (pro offender: types 24, 3, 26) and 9 (pro victim, type 18) all match by time and role. Penalties on a goalie appear twice 0.4 s apart (type 13; decide type 3 then 2) |
+| `sub_83328180` puck contact | fires (237 lines logged, capped 20/s) but meaning UNCLEAR | CANDIDATE | puck+180 "last touch" is -1 on every line (wrong field); codes 13-53 spread widely; bursts of 10-40 lines around whistles; notes 8 / 12 not identifiable |
+| event post function | vtable slot 1 = 0x8299E478 (manager 0xBFB5DCA0, vtable 0x82057B74) | OBSERVED (one read) | next: slice `sub_8299E478` |
+| GameEvent type slots | 169 of 175 filled at PRE_GAME; values are 32-bit hashes (e.g. Goal = 0xE47D2A18) | OBSERVED | list in rogue_probe_s.txt |
+| ratings +1240 + 4 * id | 29 stable values, 56-83 except id 16 = 0 and id 21 = 6 | OBSERVED (layout); id meaning still CANDIDATE | identical all game; needs the pro's attribute screen to map ids |
+| energy +360 | 100 -> drains on ice (lowest 4.3), refills on the bench, 100 at intermissions | CONFIRMED (behaviour matches shifts) | |
+| +364 | 15 -> 9.5 during period 1, back to 15 at the first intermission, then 15 for the rest of the game | UNKNOWN | not "fatigue cap" as labelled |
+| marker byte +0x22C | 0x00 on the pro while on the ice, 0xFF on the bench / at intermission; never on anyone else | OBSERVED | 76 changes, all on the pro |
+
+Owner gameplay notes this round (for later work): "sim to next shift" can skip the pro's shifts
+entirely when he never reaches the bench before a whistle (note 2); the pro dodges a teammate's
+shot automatically with a small jump (note 12).
 
 ## Hit contact sub_833E0BF8 (static read, hit_slices.txt, 2026-10-30)
 

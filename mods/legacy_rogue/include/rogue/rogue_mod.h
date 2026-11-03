@@ -33,5 +33,20 @@ void NoteContact(uint32_t victim, uint32_t hitter);  // hit contact hook, every 
 uint32_t LastContactHitter();
 uint32_t LastContactVictim();
 void SetBapPlayer(uint32_t player);
-uint32_t BapPlayer();
+uint32_t BapPlayer();  // the panel claim only (0 = none)
+
+// Round 9. The game's own cached BAP player (addresses.h ROGUE_VA_BAP_PLAYER_PTR); 0 unless a BAP
+// match is live and the pointer is a skater. ProPlayer() = the claim if set, else this (in a BAP game).
+uint32_t AutoBapPlayer();
+uint32_t ProPlayer();
+
+// Round 9 lifecycle: rogue::Tick polls the game state (read in rogue_hooks.cpp). A BAP match starts
+// the game; DONE (or the match vanishing) ends it: perks are reverted at once and the result entry
+// waits for the panel's "BAP game ended". NHL_ROGUE_AUTO=0 turns the automatic part off.
+struct GuestGame { bool valid = false; int32_t state = -1; uint32_t match = 0; bool bap = false; };
+GuestGame PollGuestGame();
+void OnBapGameOver();     // game over seen: revert perks, keep the counters
+bool AwaitingResult();   // game over seen, result not entered yet
+bool AutoStarted();      // the current / last game was started by the poll
+bool AutoLifecycle();    // NHL_ROGUE_AUTO != 0
 }  // namespace rogue
