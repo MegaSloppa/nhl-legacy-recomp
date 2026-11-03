@@ -28,7 +28,14 @@ static const std::vector<PerkDef> kPerks = {
   {"wrecking_ball", "Wrecking Ball", "Every check you land floors the target.",
    Rarity::kLegendary, Scope::kBapScoped, 1,
    {}, {{EventKind::kCheckAlwaysFloors, 1.0f, 0.f}}},
-  {"shockwave", "Shockwave", "Big hits knock down nearby opponents.", Rarity::kLegendary,
+  // Contact perks (LIVE 2026-11-03): act on every contact the game evaluates between the pro and an
+  // opposing skater (reaction choice hook). Round 10 / 17 contact floor test: 60 contact episodes a game,
+  // most of them below the hit threshold.
+  {"heavy_shoulders", "Heavy Shoulders", "Light bumps stagger opponents. More stacks, lighter bumps.",
+   Rarity::kRare, Scope::kBapScoped, 3, {}, {{EventKind::kContactFloor, 1.0f, 0.f}}},
+  {"bulldozer", "Bulldozer", "Anything you touch goes down.", Rarity::kLegendary, Scope::kBapScoped, 1,
+   {}, {{EventKind::kContactKnockdown, 0.02f, 0.f}}},
+  {"shockwave", "Shockwave", "Big hits knock down nearby opponents. (Not working yet: parked 2026-11-03.)", Rarity::kLegendary,
    Scope::kBapScoped, 1, {}, {{EventKind::kCheckShockwave, 2.5f, 0.f}}},
   // Rules (event perk, LIVE 2026-11-03): the penalty decision sub_83487DC0 is cancelled when the
   // offender is the pro. Round 9 test: 6 / 6 infractions uncalled, no side effects seen.

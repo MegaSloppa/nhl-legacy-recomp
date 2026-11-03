@@ -2,6 +2,23 @@
 
 Owner: Cherlyn. Changes to sections 1-5 need owner approval; record them in handoff-log.md.
 
+## 0. Owner direction 2026-11-03 (overrides older sections where they conflict)
+
+- **One career is the whole game.** BAP careers have no real end and no loss condition, so nothing may
+  depend on playing several careers. Cross-career Legacy is dropped as an unlock path; unlocks happen
+  inside the career (fusion of maxed perks, career milestones). DES-1: no fail condition.
+- **Balance is secondary.** Matches may become easy. What matters is satisfaction from EARNING perks and
+  from USING them to demolish the league.
+- **The league must visibly react, in the game's own career layer:** offers from other teams, trade
+  interest, contracts, news, awards, ranks - the parts of vanilla BAP that feel undercooked and empty.
+  Carrying an underdog team should feel noteworthy. NOT meant: "opponents gang up on you" (Notoriety
+  tier A tunables); those are not the goal.
+- Game systems found in the image (franchise_re_strings.txt, 2026-11-03): BAP trade requests
+  (TXT_BAP_TRADE_REQUEST_ACCEPTED / DECLINED / REVOKED), BAP_CONTRACT_NEGOTIATIONS /
+  BAP_OFFSEASON_CONTRACT / BAP_PLAYER_GROWTH / BAP_DRAFT_DAY, BAP ranks (TXT_BAP_RANK_*), the player
+  news feed ([PLAYER][NEWS][CONTRACT_OFFERED], [AWARDED], ...), NEWSPAPER_* templates,
+  LeagueLogic::AwardBrain::StatsBrain, TeamTradeBlock::_DetermineTradeInterest. Task RE-9.
+
 ## 1. Pillars (from the owner, 2026-10-27)
 
 1. **Power fantasy inside a realistic game.** You become unrealistically strong; the rest of
@@ -91,8 +108,11 @@ Later (FX-4/FX-5): game-native crowd roar, horn, camera shake, forced replay of 
 ## 8. Starter perks (src/perk_catalog.cpp)
 
 Cannon, Sniper Scope, Critical Slapshot*, Freight Train, Wrecking Ball*, Shockwave*,
+Heavy Shoulders* (Rare, 3 stacks: light contacts on opponents become hits, floor 0.20 / 0.10 / 0.05),
+Bulldozer* (Legendary: any contact on an opponent >= 0.02 becomes a knockdown; owner idea 2026-11-03),
 Jet Skates, Iron Lungs, Captain's Aura, Untouchable* (Legendary, added 2026-11-03 on the owner's
 say-so: the refs never call a penalty on you; may be redesigned with the rest in DES-3).
 Curses: Glass Bones, Goon Squad.
-(* = event perk. Live: Freight Train, Wrecking Ball, Untouchable. Legendary perks are not in a new
+Shockwave is PARKED (2026-11-03): knocking down players the pro did not touch failed in 7 test rounds.
+(* = event perk. Live: Freight Train, Wrecking Ball, Untouchable, Heavy Shoulders, Bulldozer. Legendary perks are not in a new
 meta file's unlock list and the unlock UI is TODO: add `unlock=<id>` to rogue_meta.txt to test.)

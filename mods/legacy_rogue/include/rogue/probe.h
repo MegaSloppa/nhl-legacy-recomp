@@ -94,6 +94,43 @@ void SetContactFloorTest(float min_power);
 float ContactFloorTest();          // 0 unless the probe is enabled and the test is on
 void NoteContactFloorPromoted();   // called by the hook for every promoted contact
 int ContactFloorPromoted();
+// Round 12 shockwave test (rogue_hooks.cpp): when the pro lands a knockdown, or at his next contact
+// after Arm, opposing skaters within the radius (metres) are knocked down. 0 = off.
+void SetShockwaveTest(float radius);
+float ShockwaveTest();             // 0 unless the probe is enabled and the test is on
+void ArmShockwave();               // panel button / F8
+bool TakeShockwaveArm();           // hook: consume an armed shockwave
+bool ShockwaveArmed();
+void ShockwaveFired(const char* line, int knocked_down);
+int ShockwaveCount();
+void PollKeys();                   // rogue::Tick, every frame: F8 = arm
+// Round 15: 0 = kind 0, no post step (round 12); 1 = kind 0 + the post-contact step sub_833DBD18
+// (default); 2 = the kind / float learned from the pro's last real knockdown + post step.
+void SetShockwaveMode(int mode);
+// Round 14 push test: 0 = off, else velocity added away from the pro (1 step = ~3 m/s).
+void SetShockwavePush(float strength);
+// Round 16 balance test: 0 = off, 1 = call sub_834E9FA8(target, 1, amount) (default), 2 = write 100.
+// Round 17: also force the stored power (round 15/16 behaviour). Default off = round 13 behaviour.
+// Round 18: 0 = our own dispatcher calls (rounds 12-17), 1 = physics window (default).
+void SetShockwaveMethod(int m);
+int ShockwaveMethod();
+void NoteWindowPromoted(uint32_t victim);  // a real contact promoted to a knockdown in the window
+int WindowPromoted();
+void SetShockwaveForceStored(bool on);
+bool ShockwaveForceStored();
+void SetShockwaveBalance(int mode);
+int ShockwaveBalance();
+void SetShockwaveBalanceAmount(float amount);
+float ShockwaveBalanceAmount();
+void BalanceSeen(uint32_t player, uint32_t kind, float amount, float before, float after);  // natural calls
+void ForcedBalance(uint32_t victim, int mode, float before, float after);
+float ShockwavePush();
+int ShockwaveMode();
+// Dispatcher arguments on real hits / knockdowns involving the pro (kind = *r5, fac = *r6 bits,
+// player +40 of the victim before / after) and on every forced call.
+void ContactArgs(uint32_t victim, uint32_t hitter, bool pro_hit, uint32_t desc, uint32_t applied,
+                 uint32_t kind, uint32_t fac_bits, uint32_t v40_in, uint32_t v40_out);
+void ForcedArgs(uint32_t victim, int mode, uint32_t kind, bool ok, uint32_t v40_in, uint32_t v40_out);
 // Used by the guest hooks (rogue_probe.cpp bottom, rogue_hooks.cpp reaction hooks).
 void TeamQueryResult(uint32_t player, uint32_t arg, uint32_t result, unsigned long long lr);
 void ReactionBegin(uint32_t victim, uint32_t hitter);

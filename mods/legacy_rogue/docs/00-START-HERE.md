@@ -40,8 +40,11 @@ Key trick: most tunables are global (they buff everyone, CPU included). Make the
 1. **Off by default.** Everything is gated on `NHL_ROGUE=1` (`rogue::Enabled()`). Without it the
    game must behave exactly as the parent project ships. Never change parent default behavior.
    Diagnostics additionally need `NHL_ROGUE_PROBE=1` (`rogue::probe::Enabled()`).
-2. **Never write the game's own save or `nhlng.db`** from the mod without an explicit task
-   saying so. Rogue state lives in `rogue_career.txt` / `rogue_meta.txt` next to the exe.
+2. **Changing the game's own career data is allowed** (owner, 2026-11-03): BAP career state in
+   memory (offers, trade interest, contracts, ratings, news) may be changed and may end up in the
+   game's save. Still: never corrupt or hand-edit the save / `nhlng.db` files directly, and keep
+   such changes gated on `NHL_ROGUE=1` (rule 1). Rogue's own state lives in `rogue_career.txt` /
+   `rogue_meta.txt` next to the exe.
 3. **Revert on exit.** All tunable layers are removed at BAP game end (`RevertAll`). Perks
    must never leak into other modes.
 4. **No guessed addresses in code.** An address goes into `include/rogue/addresses.h` only
@@ -99,6 +102,7 @@ mods/legacy_rogue/
                                 from generated/default (upload the output as .txt)
   tools/index_generated.py      whole-program index (callees, constant refs, strings) for upload
   tools/read_image.py           read words / floats / strings / tables from the image dump
+  tools/refs_to.py              functions that reference given image addresses (from the index)
   docs/static/                  static map (static-map.md) + tunable_readers.tsv + game_events.tsv
   docs/                         this folder
 ```

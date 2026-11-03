@@ -119,6 +119,10 @@ void Init(nhl::ui::ITunableStore* /*store*/) {
 
 void Tick() {
   if (!g_enabled || !g_patcher) return;
+  if (probe::Enabled()) {
+    probe::PollKeys();     // round 12: F8 arms the shockwave test
+    ShockwaveWindowTick();  // round 18: physics window
+  }
   PollLifecycle();  // before the index check: ApplyLayers defers until the index is ready
   if (!g_patcher->Ready()) {
     // Build only after tweak registration (~12 s after boot) or when a game needs it.

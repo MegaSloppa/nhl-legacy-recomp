@@ -27,6 +27,10 @@ enum class EventKind : uint8_t {
   kGoalHeal,            // p0 = energy restored on goal (needs RE-5/6)
   kHitPowerBoost,       // p0 = extra hit power per stack, 0.15 = +15% (LIVE)
   kPenaltyImmunity,     // p0 = chance 0..1 that a penalty call on the pro is cancelled (LIVE 2026-11-03)
+  kContactFloor,        // per stack: the pro's light contacts on opposing skaters become hits (floor
+                        // 0.20 / 0.10 / 0.05 by stack count; LIVE 2026-11-03, contact floor test)
+  kContactKnockdown,    // p0 = min contact power: the pro's contacts on opposing skaters at or above it
+                        // become knockdowns (LIVE 2026-11-03; round 18: a 0.23 contact promoted -> fell)
 };
 
 struct EventEffect { EventKind kind = EventKind::kNone; float p0 = 0, p1 = 0; };

@@ -250,6 +250,87 @@ game, add the line `unlock=untouchable` to `rogue_meta.txt` next to the exe, sta
 Perk Shop (reroll until it shows; it is Legendary, 400 Hype). In a BAP game a cancelled call shows
 "NO CALL". Works without the probe. Same trick for Wrecking Ball: `unlock=wrecking_ball`.
 
+### 4k. Round 12: shockwave test (2026-11-03, Kathleen)
+
+Incremental build. Delete old logs, `run_probe.bat`, BAP game. Diagnostics, **Shockwave test**: pick
+a radius (start with **3 m**). Then:
+1. Land a knockdown near other opponents: everyone on the other team within the radius should fall.
+2. Press **Arm shockwave** or **F8** (keyboard), then bump into anyone (even a light brush): it fires.
+3. Try 5 m and 8 m. Also skate around normally for a few minutes (the velocity search needs you
+   moving; nothing to do for it).
+4. Note: did they fall, which way, how it looked, anything odd (stuck players, play not stopping,
+   freeze, crash). A crash is useful data too: say what you were doing.
+5. Upload `rogue_probe_s.txt` (the `shockwave` and `velocity-hunt` lines) and your notes.
+
+### 4l. Round 13: shockwave with a real contact kind (2026-11-03, Kathleen)
+
+Incremental build. Delete old logs, `run_probe.bat`, BAP game. Diagnostics, Shockwave test: radius
+**5 m**, mode **learned from your real knockdowns** (default).
+1. Land one **real knockdown** first (the shockwave learns its contact kind from it). That knockdown
+   also fires the shockwave on opponents near you.
+2. Then Arm / F8 a few times next to opponents, as in 4k.
+3. Switch the mode to **kind 0** once and fire again (comparison with round 12).
+4. Skate around normally for a minute or two (velocity search).
+5. Note what you see (falls? stumbles? direction?) and upload `rogue_probe_s.txt` + notes.
+
+### 4m. Round 14: shockwave fix + push (2026-11-03, Kathleen)
+
+Incremental build, `run_probe.bat`, BAP game. Shockwave test: radius **5 m**, mode **learned**
+(it now starts with kind 6 even before your first knockdown), **no push** first.
+1. Arm / F8 near 2-3 opponents a few times. Do they ALL fall now?
+2. Then **push x1**, **x2**, **x4**: do they fly away from you, slide, or nothing different?
+3. Note anything odd (players sliding forever, through the boards, freezing).
+4. Upload `rogue_probe_s.txt` + notes.
+
+### 4n. Round 15: shockwave with forced power (2026-11-03, Kathleen)
+
+Incremental build, `run_probe.bat`, BAP game. Shockwave test: radius **5 m**, mode **kind 0 + post**
+(default), **no push**.
+1. Arm / F8 near 2-3 opponents, 4-5 times. Do they all fall?
+2. Same with mode **learned kind + post** a few times.
+3. If they fall: **push x1 / x2 / x4** a few times each.
+4. Upload BOTH `rogue_probe.txt` and `rogue_probe_s.txt` + notes.
+
+### 4o. Round 16: shockwave + balance (2026-11-03, Kathleen)
+
+Incremental build, `run_probe.bat`, BAP game. Shockwave test: radius **5 m**, mode **kind 0 + post**,
+no push, **balance hit (game)** with **amount 50** (defaults).
+1. Arm / F8 near opponents 3-4 times. Do they fall / stumble?
+2. Then amount **500**, 3-4 times; then amount **5**.
+3. Then **balance write 100**, 3-4 times.
+4. If someone falls: try push x2 on that setting.
+5. Upload both logs + notes (which setting made what happen).
+
+### 4p. Round 17: back to the round 13 setup, close range (2026-11-03, Kathleen)
+
+Incremental build, `run_probe.bat`, BAP game. Shockwave test: radius **2 m**, mode **kind 0 + post**,
+"also force the stored power" **unticked**, balance **off**, no push (all defaults except the radius).
+1. Get right next to an opponent (touching distance or close) and Arm / F8, 5-6 times.
+2. Same with radius **5 m** a few times (do only the closest ones fall?).
+3. Tick "also force the stored power" and repeat step 1 a few times.
+4. Upload both logs + notes.
+
+### 4q. Round 18: shockwave physics window + contact floor 0.05 (2026-11-03, Kathleen)
+
+Incremental build, `run_probe.bat`, BAP game.
+1. Contact floor **from 0.05**, play a few minutes: right amount of stumbles, too many, too few?
+   Then **0.02** briefly. Turn it **off** for step 2 (so the window test is clean).
+2. Shockwave test: method **physics window**, radius **3 m**. Skate next to 1-3 opponents and press
+   **F8** (no contact needed: it opens a 0.4 s window). Then 5 m and 8 m. Also try ticking "also force
+   the stored power" once.
+3. Note: did anyone fall / stumble, from how far, how did it look? Anything odd (players pulled
+   together, jitter, CPU players colliding strangely during the window)?
+4. Upload both logs + notes.
+
+### 4r. Perks Heavy Shoulders + Bulldozer (2026-11-03)
+
+Close the game, add `unlock=heavy_shoulders` and `unlock=bulldozer` to `rogue_meta.txt` (existing meta
+files only get new perks this way; there is no unlock UI yet). Start, open the Perk Shop, reroll until
+they show (Bulldozer is Legendary, 400 Hype; edit `hype=` in rogue_career.txt if you need more).
+No probe needed; switch the probe's contact floor test OFF if you run with the probe, so you feel the perk.
+- Heavy Shoulders: light bumps stagger opponents; 1-3 stacks (floor 0.20 / 0.10 / 0.05).
+- Bulldozer: any contact on an opposing skater becomes a knockdown.
+
 ## 5. Starting a fresh agent session
 
 Paste:

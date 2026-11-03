@@ -1,10 +1,13 @@
 # Current status (AUTHORITATIVE)
 
-Last updated: 2026-11-03 (12:15) by Kathleen (monday.com agent). If this disagrees with another doc,
+Last updated: 2026-11-03 (18:00, end of day) by Kathleen (monday.com agent). If this disagrees with another doc,
 this wins; fix the other doc.
 
 ## Baseline
 
+- **State at 2026-11-03 end of day:** the pro is found automatically (cached pointer, gated) and BAP
+  games start / end by themselves (state machine poll). Live event perks: Freight Train, Wrecking Ball,
+  Untouchable, Heavy Shoulders, Bulldozer. Shockwave parked. The bullets below are history.
 - **The modded game builds and launches** on the owner's machine (branch `legacy-rogue` of
   `MegaSloppa/nhl-legacy-recomp`). Wiring is final: `rogue::fx::Draw()` and `rogue::Tick()` run
   every frame, `rogue::DrawPanel()` only while the menu is open.
@@ -31,6 +34,105 @@ this wins; fix the other doc.
   Every setup problem hit so far and its fix: `user-guide.md` section 7.
 - GitHub: agents can READ the fork but writes fail from the agent's connection. Deliver changes
   as a zip of changed files only (00-START-HERE rule 12).
+
+## END OF DAY 2026-11-03 (18:00): pinned, commit of rounds 9-19
+
+Owner pinned everything for today and commits this package (rounds 9-19 + design direction).
+**Not yet built / run since round 18:** the perks Heavy Shoulders and Bulldozer, the perk Untouchable
+(only the probe test ran), `tools/refs_to.py`. First thing next session: build, quick BAP game with them
+(user-guide 4j / 4r).
+Owner 2026-11-03: changing the game's own career data is fine (00-START-HERE rule 2 updated).
+
+Pinned work, in the order discussed (owner picks):
+1. **RE-9, the league reacts** (owner priority, design.md section 0): run `tools/refs_to.py` on the
+   2026-11-02 index with `docs/static/re9_anchors.txt`, then slices of the trade request / contract /
+   news / award / trade interest code; make dominance visible there.
+2. **Ratings past 99** (RE-11): override `sub_83501A68` for the pro (also feeds RE-9: trade interest
+   and contract value probably read ratings).
+3. **In-career unlocks** (DES-3): fusion (Heavy Shoulders x3 -> Bulldozer, Freight Train x3 -> Wrecking
+   Ball, Cannon x3 -> Critical Slapshot) and milestones tied to league reactions; replaces the
+   cross-career Legacy unlocks. Until then: `unlock=<id>` lines in rogue_meta.txt.
+4. Tuning after play: Heavy Shoulders floors, Bulldozer feel, Hype / Notoriety inflation from knockdowns.
+5. Parked: Shockwave (7 rounds, re-findings.md "Round 12" .. "Round 18"), puck contact codes (RE-4),
+   final score (RE-5), event dispatch `sub_8299E478` (RE-6), the speed lost when aiming a check (DES-4).
+
+## Design direction 2026-11-03 (17:50, owner): one career, the league reacts
+
+design.md section 0: one career is the whole game (no multi-career Legacy, no fail condition), balance
+secondary, priority = the game's own career layer visibly reacting (offers, trade interest, contracts,
+news, awards). Next RE: RE-9 static pass on those systems (string anchors in design.md section 0;
+query the 2026-11-02 whole-program index with `tools/refs_to.py`).
+
+## Checkpoint 2026-11-03 (17:05): shockwave parked; perks Heavy Shoulders + Bulldozer
+
+Round 18: raising the player-player physics range created no contacts at range (0 in 30+ windows):
+Shockwave parked after 7 rounds. But promoting a real light contact to a knockdown makes the target
+fall, so two contact perks went in (perk_catalog.cpp, rogue_hooks.cpp ContactFloor): **Heavy
+Shoulders** (Rare, 3 stacks, hit floor 0.20 / 0.10 / 0.05) and **Bulldozer** (Legendary, contacts >= 0.02
+become knockdowns). Opposing skaters only. Not run in game yet. Existing meta files need
+`unlock=heavy_shoulders` / `unlock=bulldozer` in rogue_meta.txt (user-guide 4r). Bulldozer will inflate
+the knockdown count used for Hype / Notoriety (DES-2 balance).
+
+## Session 2026-11-03 (16:40): round 17 result; contact floor works; round 18 physics window
+
+Shockwave via our own dispatcher calls: 0 falls in 6 rounds, parked. Contact floor 0.10 works well
+(owner wants 0.05). Round 18 (probe, no new .cpp): contact floor options 0.20 / 0.10 / 0.05 / 0.02;
+shockwave "physics window" (default method): F8 / Arm / a knockdown raises gPlayerPlayerDistanceToEnable
+to the radius for 0.4 s and promotes every real contact the pro makes with an opponent in that window
+to a knockdown. user-guide 4q. Next perk candidate: a checking perk on the contact floor (DES-4).
+
+## Session 2026-11-03 (15:15): round 16 result; round 17 = round 13 setup at close range
+
+Balance is not the fall path (the game never called the balance penalty). Round 13's forced falls were
+the 3 targets within 2 m of the pro; later rounds changed the setup. Round 17 (probe, no new .cpp):
+stored-power forcing optional (default off, as in round 13), balance off by default, 2 m radius option.
+user-guide 4p.
+
+## Session 2026-11-03 (15:05): round 15 result - reaction path ruled out; round 16 tests balance
+
+Round 15 forced the power everywhere (0.9 in the stored slot too): still no falls (0 of 14 fall-routine
+starts). The reaction path does not drop players. Round 16 (probe, no new .cpp): the shockwave also
+hits the target's balance - by calling the game's balance penalty `sub_834E9FA8(target, bumped,
+amount)` (default, amount 5 / 50 / 500) or by writing 100 into the balance-loss float. Natural balance
+penalties are logged for calibration. user-guide 4o.
+
+## Session 2026-11-03 (14:50): round 14 result; round 15 forces the power at its source
+
+Round 14 (kind 6): no target fell. The fall routine trace shows every natural skater knockdown starts a
+fall, forced ones rarely: the stored power the fall path reads was never forced. Round 15 (probe, no
+new .cpp): pass-through hook on the power function `sub_833CA500` (forced value during shockwave
+calls only), mode default kind 0 + post step, on-ice filter |x| < 12.8 m. user-guide 4n.
+
+## Session 2026-11-03 (14:05): round 13 result - first shockwave falls; round 14
+
+Owner saw real falls from the shockwave, inconsistent. Cause found: the learned contact kind was
+overwritten by a duplicate same-frame call with kind 0, so most forced calls still used kind 0. Velocity
+found (body +0x50 / +0x60 / +0x70). Round 14 (probe, no new .cpp): learning fix + default kind 6 / 0.25,
+on-ice filter, push test (velocity added away from the pro). user-guide 4m.
+
+## Session 2026-11-03 (13:50): slices S10 read; shockwave round 13
+
+The contact check (static-map.md 17) passes the dispatcher a contact KIND and a float and runs a
+post-contact step `sub_833DBD18` after it; round 12 passed kind 0 and skipped the step. Live position =
+*(player + 32) + 48. Round 13 (probe, no new .cpp): shockwave mode "learned" copies the kind / float of
+the pro's last real knockdown and runs the post step; `contact-args` / `forced` log lines (kind, float,
+player +40 before / after); velocity hunt on the physics body. user-guide 4l.
+
+## Session 2026-11-03 (13:30): round 12 result - forced dispatch runs but nothing falls
+
+The shockwave test fired and the game accepted 20 forced knockdowns (same log trail as a real one),
+but nobody fell. The fall needs more than the reaction state (re-findings.md "Round 12 result").
++0xD0 is not the live position. Next: slices S10 (contact check), then a live-position finder.
+
+## Session 2026-11-03 (13:00): shockwave test (probe round 12)
+
+Owner asked for an effect that knocks nearby players away. Slices S9 (static-map.md 16): the reaction
+dispatcher can be called by us the way the game calls it for a hitter-less reaction; player
+positions at +0xD0 (round 8 dumps). Round 12 (probe-only, no new .cpp): **Shockwave test** - when the
+pro lands a knockdown (or at his next contact after Arm / F8), opposing skaters within 3 / 5 / 8 m are
+knocked down through the dispatcher with forced power; plus a live velocity search for a later
+"fling" impulse. user-guide 4k. Not compiled against the SDK; a wrong guess here can crash the game
+(guest call from a hook), so it only runs with NHL_ROGUE_PROBE=1 and the radius set.
 
 ## Checkpoint 2026-11-03 (12:15): perk Untouchable; commit of rounds 9-11
 
@@ -232,6 +334,14 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 | BUILD-12 | Round 8 marker scan | A+U | DONE 2026-11-03 (owner ran 4f in one BAP game; results in re-findings.md) |
 | BUILD-13 | Build PROBE-S1 + user-guide 4g | U | DONE 2026-11-03 (`_game_ffx_build.bat`, compiled first time; one BAP game logged) |
 | BUILD-14 | Round 9 package (auto pro, auto start / game over, penalty immunity test) | U | DONE 2026-11-03 (built incrementally, 4h run: all checks passed) |
+| BUILD-23 | Rounds 9-19 + design package: incremental build, commit + push | U | ACTIVE 2026-11-03 18:00: owner commits (end of day). In-game check of Heavy Shoulders / Bulldozer / Untouchable next session |
+| BUILD-22 | Round 18 probe (physics window, contact floor 0.05 / 0.02) | U | DONE 2026-11-03 (no contacts at range; promoted real contact fell) |
+| BUILD-21 | Round 17 probe (round 13 setup, 2 m) | U | DONE 2026-11-03 (no falls; contact floor 0.10 tested: works) |
+| BUILD-20 | Round 16 probe (balance test) | U | DONE 2026-11-03 (no falls; balance lead rejected) |
+| BUILD-19 | Round 15 probe (power at the source) | U | DONE 2026-11-03 (power 0.9 everywhere, still no falls) |
+| BUILD-18 | Round 14 probe (learning fix, on-ice filter, push test) | U | DONE 2026-11-03 (no falls with kind 6; push not tried) |
+| BUILD-17 | Round 13 probe (learned contact kind + post step, live position) | U | DONE 2026-11-03 (some real falls; learning bug found) |
+| BUILD-16 | Round 12 probe (shockwave test, velocity hunt) | U | DONE 2026-11-03 (ran: fires, no visible fall, no crash) |
 | BUILD-15 | Rounds 10-11 package (start gate fix, contact floor test, perk Untouchable): `scripts\_build_vkffx_incr.bat`; commit + push | U | ACTIVE: owner commits 2026-11-03 12:15 (stub syntax check PASS, not compiled against the SDK yet). 4i (contact floor) optional, later |
 | PARENT-1 | Tell the parent project: its Engine Tunables editor / `ITunableStore` writes record+8 (the type tag) instead of the live value N+32 (+ heap copy H+36); its `gDekeRatEffect` sanity value comes from the registration pool. Evidence: re-findings.md. Owner decides how to report (issue / PR) | Owner (agent drafts) | TODO |
 
@@ -263,13 +373,13 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 | RE-0 | Run `tools/find_bap_code.py` on the decompressed image, upload report | U | TODO (low; the sweep approach works better) |
 | RE-1 | Check resolution (hitter/hittee) | A+U | DONE 2026-10-30 for detection: hit contact `sub_833E0BF8` (r3 victim, r4 hitter) + knockdown reaction 0x83ABF598 CONFIRMED (rounds 3-4), in addresses.h. Changing hit outcomes needs the decision point: RE-3 / CHECK_RESOLVE (`sub_83429560`) |
 | RE-2 | Identify the BAP-controlled skater | A+U | DONE 2026-11-03: 0x83C876D4 (gated on match + BAP flag) CONFIRMED over 2 BAP games, 0 in exhibition; used by every hook since round 9. Claim buttons stay as an override |
-| RE-3 | Knockdown: fall entry point or skater balance offset | A+U | DONE 2026-10-30 for hit outcomes: power -> reaction table (CONFIRMED), Freight Train / Wrecking Ball built on it. A force-fall for non-contact effects (Shockwave on nearby players, crit slap) is still open: lead `sub_83429560` called for another victim |
+| RE-3 | Knockdown: fall entry point | A+U | PARTIAL 2026-11-03: real contacts promoted to a knockdown fall (CONFIRMED, contact perks). Knocking down players the pro does not touch: not found after 7 probe rounds (own dispatcher calls, power at the source, balance, physics range); PARKED |
 | RE-4 | Puck-vs-skater contact | A+U | TODO. S1: `sub_83328180` fires but the shooter field (puck+180) is always -1 and the codes are unclear; re-slice (static-map.md 15, item 4) |
 | RE-5 | BAP game start / end + final score + BAP player's stat line | A+U | PARTIAL 2026-11-03: start / end from the state machine (PRE_GAME / DONE, CONFIRMED, round 9 uses it). Final score still open: goal calls miss simulated goals, so the score must be read (static-map.md 15, item 2) |
 | RE-6 | BAP stat-event stream | A+U | TODO. Event post function = 0x8299E478 (S1); slice it next (static-map.md 15, item 1) |
 | RE-7 | BAP career save identity | A+U | TODO |
 | RE-8 | BAP progression storage (lead: `BAP_PLAYER_GROWTH` @ 0x82035818) | A+U | TODO |
-| RE-9 | Meta reactions: contracts, trades, line promotion, task grading | A+U | TODO |
+| RE-9 | Meta reactions: offers, trade interest / requests, contracts, news feed, awards, BAP rank (owner priority 2026-11-03, design.md section 0) | A+U | ACTIVE: string anchors found; next = functions that reference them (`tools/refs_to.py` on the 2026-11-02 index), then slices |
 | RE-10 | Penalty call decision ("no penalties" perk) | A+U | DONE 2026-11-03: forcing `sub_83487DC0` to 0 for the pro blocks the call (6/6). Perk Untouchable built on it (rogue_hooks.cpp), first in-game check pending |
 | RE-11 | BAP player's live ratings in memory | A+U | ACTIVE: raw ratings +1240 + 4 * id, full id map CONFIRMED 2026-11-03 (re-findings.md Round 9). Next: behaviour test of an override of `sub_83501A68` for the pro (ratings past 99) |
 
@@ -285,18 +395,16 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 ### Design
 | ID | Task | Who | Status |
 |---|---|---|---|
-| DES-1 | Pick the win/loss structure (design.md section 6) | Owner | TODO |
+| DES-1 | Win / loss structure | Owner | DONE 2026-11-03: no loss condition; one career is the whole game (design.md section 0) |
 | DES-2 | Balance pass: Hype income vs prices over an 82-game season | A | TODO |
-| DES-4 | Checking feel (owner 2026-11-03): checks rarely connect, aiming a check loses speed. Data: 60 contact episodes / 11 hits in a game. Options: contact floor (round 10 test), stronger pro hit power (Freight Train), check-assist tunables (global, need scoping), ignore the aim slowdown | Owner + A | ACTIVE (round 10 test) |
+| DES-4 | Checking feel (owner 2026-11-03) | Owner + A | ACTIVE: perks Heavy Shoulders + Bulldozer built on the contact floor (2026-11-03 17:05). Later: the speed lost while aiming a check |
 | DES-3 | Perk system shape (owner 2026-10-30): maybe no stacking, perks much more expensive but much more powerful; risks: nothing left to buy too soon, a run that is overpowered and no longer fun later, and an early run that is just standard NHL. Owner wants something special from game 1. Agent to propose options (e.g. a strong starting "archetype" perk, perks that evolve or have drawbacks, Notoriety-scaled opposition, Hype sinks such as rerolls / temporary boosts / Legacy) in design.md | Owner + A | TODO |
 
 ## Recommended next action
 
-1. Owner: build (incremental), commit + push. Next BAP game: own Untouchable (`unlock=untouchable`
-   in rogue_meta.txt, buy it) and check that penalties are not called and "NO CALL" shows.
-2. Agent: a rating override test (`sub_83501A68`, ratings past 99); a checking perk once the owner
-   wants to try the contact floor (4i); an unlock UI for Legendary perks (design.md section 5).
-3. Static, optional: event dispatch `sub_8299E478`, final score (static-map.md 15).
+1. Owner: build (`scripts\_build_vkffx_incr.bat`), commit + push (message in the 2026-11-03 18:00
+   handoff entry). Next session: quick BAP game with Untouchable, Heavy Shoulders, Bulldozer (4j / 4r).
+2. Then the pinned list above (owner picks; RE-9 is the stated priority).
 
 ## How to verify the branch state without the owner
 

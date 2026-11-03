@@ -150,14 +150,71 @@ void DrawDiagnostics() {
   ImGui::SeparatorText("Contact floor test (round 10)");
   ImGui::TextWrapped("Your light contacts on opposing skaters become normal hits. Lower = more contacts count.");
   const float fl = probe::ContactFloorTest();
-  const float fopts[] = {0.f, 0.3f, 0.2f, 0.1f};
-  const char* flabels[] = {"off", "from 0.30", "from 0.20", "from 0.10"};
-  for (int i = 0; i < 4; ++i) {
+  const float fopts[] = {0.f, 0.2f, 0.1f, 0.05f, 0.02f};
+  const char* flabels[] = {"off##floor", "from 0.20##floor", "from 0.10##floor", "from 0.05##floor",
+                           "from 0.02##floor"};
+  for (int i = 0; i < 5; ++i) {
     if (i) ImGui::SameLine();
     if (ImGui::RadioButton(flabels[i], fl == fopts[i])) probe::SetContactFloorTest(fopts[i]);
   }
   ImGui::SameLine();
   ImGui::TextDisabled("promoted so far: %d", probe::ContactFloorPromoted());
+
+  ImGui::SeparatorText("Shockwave test (round 12)");
+  ImGui::TextWrapped("When your pro lands a knockdown, opposing skaters within the radius are knocked down "
+                     "too. Arm (or F8): fires at your next contact of any kind.");
+  const float sr = probe::ShockwaveTest();
+  const float sopts[] = {0.f, 2.f, 3.f, 5.f, 8.f};
+  const char* slabels[] = {"off", "2 m", "3 m", "5 m", "8 m"};
+  for (int i = 0; i < 5; ++i) {
+    if (i) ImGui::SameLine();
+    char lb[24];
+    std::snprintf(lb, sizeof(lb), "%s##shock", slabels[i]);
+    if (ImGui::RadioButton(lb, sr == sopts[i])) probe::SetShockwaveTest(sopts[i]);
+  }
+  const int smeth = probe::ShockwaveMethod();
+  if (ImGui::RadioButton("physics window (round 18)##smeth", smeth == 1)) probe::SetShockwaveMethod(1);
+  ImGui::SameLine();
+  if (ImGui::RadioButton("own calls (rounds 12-17)##smeth", smeth == 0)) probe::SetShockwaveMethod(0);
+  if (smeth == 1)
+    ImGui::TextDisabled("F8 / Arm opens a 0.4 s window: every contact you make with an opponent is a knockdown "
+                        "(promoted so far: %d).", probe::WindowPromoted());
+  const int sm = probe::ShockwaveMode();
+  if (ImGui::RadioButton("kind 0, no post##smode", sm == 0)) probe::SetShockwaveMode(0);
+  ImGui::SameLine();
+  if (ImGui::RadioButton("kind 0 + post (default)##smode", sm == 1)) probe::SetShockwaveMode(1);
+  ImGui::SameLine();
+  if (ImGui::RadioButton("learned kind + post##smode", sm == 2)) probe::SetShockwaveMode(2);
+  bool fs = probe::ShockwaveForceStored();
+  if (ImGui::Checkbox("also force the stored power (rounds 15-16)##sfs", &fs)) probe::SetShockwaveForceStored(fs);
+  const int sb = probe::ShockwaveBalance();
+  const char* blabels[] = {"balance off##sbal", "balance hit (game)##sbal", "balance write 100##sbal"};
+  for (int i = 0; i < 3; ++i) {
+    if (i) ImGui::SameLine();
+    if (ImGui::RadioButton(blabels[i], sb == i)) probe::SetShockwaveBalance(i);
+  }
+  if (sb == 1) {
+    const float ba = probe::ShockwaveBalanceAmount();
+    const float bopts[] = {5.f, 50.f, 500.f};
+    const char* bal_l[] = {"amount 5##sbam", "amount 50##sbam", "amount 500##sbam"};
+    for (int i = 0; i < 3; ++i) {
+      if (i) ImGui::SameLine();
+      if (ImGui::RadioButton(bal_l[i], ba == bopts[i])) probe::SetShockwaveBalanceAmount(bopts[i]);
+    }
+  }
+  const float sp = probe::ShockwavePush();
+  const float popts[] = {0.f, 1.f, 2.f, 4.f};
+  const char* plabels[] = {"no push##spush", "push x1##spush", "push x2##spush", "push x4##spush"};
+  for (int i = 0; i < 4; ++i) {
+    if (i) ImGui::SameLine();
+    if (ImGui::RadioButton(plabels[i], sp == popts[i])) probe::SetShockwavePush(popts[i]);
+  }
+  ImGui::BeginDisabled(sr <= 0.f);
+  if (ImGui::Button(probe::ShockwaveArmed() ? "Armed (fires at your next contact)" : "Arm shockwave (F8)"))
+    probe::ArmShockwave();
+  ImGui::EndDisabled();
+  ImGui::SameLine();
+  ImGui::TextDisabled("fired so far: %d", probe::ShockwaveCount());
 
   ImGui::SeparatorText("Write test (TUN-10 hip checks)");
   ImGui::TextWrapped("Writes the field the game's code reads (or every game-style table entry). "

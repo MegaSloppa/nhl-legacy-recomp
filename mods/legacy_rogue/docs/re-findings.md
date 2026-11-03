@@ -46,6 +46,124 @@ only with log evidence. Reaction table entry names (image strings): 0 incidental
 | (energy / injury) | player +360 energy, +368 injury pointer | CANDIDATE | (11, 13) |
 | (players) | 0x83C1D080 players[team * 20 + slot] | CANDIDATE | (8) |
 
+## Round 18 result: physics window (2026-11-03 17:00, owner + Kathleen)
+
+- gPlayerPlayerDistanceToEnable stock = **9.00 ft** (2.7 m); the window raised it to 16.4 ft. 30+ windows
+  opened (F8): **0 contacts at range**. Promotions happened only when the pro was really in contact
+  with an opponent. So that tweak does not make the contact check pair far players (the real
+  gate is elsewhere, e.g. body overlap). Shockwave PARKED (design.md section 8).
+- **Promoting a real light contact to a knockdown makes the target fall:** at t=43639500 a 0.233 contact
+  promoted in the window -> knockdown -> fall routine started 15 ms later (choice-only forcing, stored
+  power not forced). This is the mechanism for the Bulldozer perk.
+- Bug (probe only): a promoted knockdown re-opened the window every frame (same victim promoted 15-22
+  times in 0.5 s). Harmless; left as is while the shockwave is parked.
+- Contact floor 0.02 felt about the same as 0.10 (owner).
+
+## Round 17 result + contact floor (2026-11-03 16:30, owner + Kathleen)
+
+- Shockwave (round 13 setup, 2 m / 5 m / 8 m, stored power on and off): no visible effect on anyone but
+  the primary target of a check. (Design note: the shockwave never targets the primary - on a natural
+  knockdown he already falls; on Arm the contact partner is excluded.) 12 forced targets, 0 falls.
+  Conclusion after 6 rounds: **our own dispatcher calls do not produce falls**, near or far. Parked in
+  favour of the physics window (round 18).
+- **Contact floor test (round 10) WORKS:** at 0.10, 73 contacts promoted in one game; opponents stumbled
+  much more easily, and one big hit (probably a heavy stumble) became a fall with an abrupt transition
+  from a stumble start to flat on the back. Owner: halve the floor again (0.05) for even smaller
+  contacts; good for hitting perks. So promoting REAL contacts through the reaction choice produces
+  visible reactions; only the fake contacts do not.
+
+## Round 16 result + why round 13 was different (2026-11-03 15:15, owner + Kathleen)
+
+Owner: no falls with balance hit 50 / 500 or balance write 100, in kind 0 and learned modes.
+- **Balance lead REJECTED:** `sub_834E9FA8` was never called by the game during the whole session (all
+  20 logged calls were ours), and the balance-loss float was 0.00 before every forced call. Natural
+  collisions do not go through it, so it is not what drops players.
+- **What round 13 had:** the only forced falls (3) were the targets CLOSEST to the pro: d = 1.2, 2.0 and
+  1.6 m. Every round-13 target at 2.6 m or more stayed up (7). Round 13 also left the stored power at
+  the natural value (forced only the reaction choice) and passed kind 0 / float 1.0 + the post step.
+- Rounds 14-16 changed that setup: round 14 kind 6 (and a bench filter that dropped close players),
+  rounds 15-16 forced the stored power too. Round 15's close targets (1.2, 1.4 and 2.0 m) did not fall
+  either, so the stored-power change is the main suspect.
+- HYPOTHESIS: a forced knockdown only becomes a real fall when the target is inside the player-player
+  physics range (gPlayerPlayerDistanceToEnable, "Physics/Ragdoll/Balance/Modifiers", feet) of the pro,
+  so the game's own physics interaction between them is live, and with the round-13 power handling.
+  Round 17 restores round 13 (stored power not forced, kind 0 + post, balance off) with a 2 m radius.
+
+## Round 15 result: the reaction path alone never drops a player (2026-11-03 15:00, owner + Kathleen)
+
+Owner: no knockdowns in either mode; push did nothing visible.
+- The source hook worked: every forced call now shows power 0.900 in the reaction choice AND in the hit
+  contact (the stored slot), with the knockdown descriptor, exactly like a natural knockdown.
+- Still **0 fall-routine starts for 14 forced targets**, while both natural knockdowns in the session
+  started one (0.847, 0.930). One target (idx 29) was forced at t=36812890 without falling, then fell
+  0.9 s later from a natural hit.
+- Conclusion (OBSERVED, 4 rounds): the dispatcher path (power, descriptor, reaction state, hit
+  contact, post-contact step) is not what makes a skater fall. The 3 round-13 falls were probably
+  natural contacts at the same moment.
+- The pairwise check is the ITK player-player physics (radius tweak gPlayerPlayerDistanceToEnable,
+  "balance-magnet forces"). HYPOTHESIS: the fall comes from the balance system (balance-loss float
+  *(*(player+80)+64)+368, thresholds 23 / 25), fed by physical contact. Round 16 tests balance.
+- Corrected addresses in static-map.md 16-17 (hex conversion slips): manager *(0x83BB8288), mode byte
+  0x83BBC230+29, radius tweak 0x83C8F25C, controller managers 0x83C29790.
+
+## Round 14 result + fall trace (2026-11-03 14:45, owner + Kathleen)
+
+Owner: with kind 6 (round 14 default) no shockwave target fell; push not tried.
+- **Fall detector:** the probe's `call 829380A0` lines (the routine that runs only on real falls) start
+  a burst (r6 = heap pointer) within 0-50 ms of EVERY natural knockdown of a skater (8 / 8 across rounds
+  13-14; none for the goalie). For forced knockdowns: 3 bursts for 14 targets, all in round 13 with kind 0
+  (round 14, kind 6: 0 of 4). This matches what the owner saw.
+- **Likely cause:** the dispatcher stores the power from `sub_833CA500` at r1+84 BEFORE the reaction
+  choice and passes that slot to the hit contact and the fall path. Rounds 12-14 forced only the choice's
+  f1, so downstream code saw the real power (0.09-0.6). Round 15 forces it at the source.
+- Round 14's on-ice filter (+0xD0 != 0) dropped most opponents (0 -> 11 counted over the game): +0xD0 is
+  filled only after some event. Round 15 uses |x| < 12.8 m on the live position instead.
+- Contact kinds again: the pro's hits kind 6 (0.0-0.25), hits on the pro kind 0 (1.0).
+
+## Round 13 result: shockwave with a learned contact kind (2026-11-03 14:00, owner + Kathleen)
+
+Owner: some forced knockdowns did make players fall, but inconsistently. Best case: on a strong real
+hit, a second nearby opponent clearly fell from the shockwave while a third, equally close, did not
+react. Mode "kind 0" (round 12): no reactions (only 2 armed fires there, both with no target in range).
+- **Learning bug:** the first real knockdown learned kind 6 / float 0.25, but the game calls the
+  dispatcher a second time in the same frame for the same pair (applied 0, kind 0, still the knockdown
+  descriptor), which overwrote it with kind 0. So 1 forced call used kind 6 and the other 9 used kind 0.
+  Fixed in round 14 (learn only kind != 0 with applied 1; default kind 6 / 0.25 until something is learned).
+- **Contact kinds seen (`contact-args`):** the pro's knockdowns kind 6 with float 0.247-0.25; his normal
+  hits kind 6 with 0.034-0.09; hits on the pro kind 6 (0.06-0.09), kind 1 (0.0) or kind 0 (1.0).
+  HYPOTHESIS: kind 6 = body check, float = contact strength.
+- Player +40 stayed 0 before / after every call: not the fall state.
+- **Live position CONFIRMED-ish:** *(player + 32) + 48 moved with the pro all game (1,700 moving samples).
+- **Velocity:** physics body +0x50, +0x60, +0x70 follow the position change (cos 0.98 over 1,700
+  samples, ratio 0.33 = metres per 1/30 s frame). OBSERVED; which copy the integrator uses is unknown.
+- "opponents on ice" counted 17: body positions exist for the bench too. Round 14 filters on +0xD0 != 0.
+
+## Round 12 result: shockwave test (2026-11-03 13:30, owner + Kathleen)
+
+Owner: the shockwave fired (log lines) but nobody fell, stumbled or reacted visibly. No crash.
+- 7 fires (5 armed, 1 on a knockdown, 1 "pro position unreadable" = on the bench). 28 forced
+  dispatches: every one ran the full pipeline exactly like a real knockdown in rogue_probe.txt
+  (power forced to 0.90 -> knockdown descriptor 0x83ABF598, hit contact called, dispatcher returned
+  1) for 20; 8 returned 0 (gate / state 19), always on players already hit by an earlier shockwave.
+- So the reaction STATE path is not what makes a skater fall. Note the dispatcher also returns 1 when
+  the victim is already in the chosen state (it then skips `sub_83429300`). HYPOTHESIS: the visible
+  fall comes from the contact / interaction step that runs before the dispatcher (`sub_8342B8C8`,
+  the pairwise contact check, calls `sub_8350FB88` first) or from physics data it leaves behind.
+- **+0xD0 is NOT the live position**: the pro's value was identical (3.39, -24.82) in two fires 32 s
+  apart during play, and the 10 Hz velocity hunt never collected 300 moving samples. It changes only
+  sometimes (snapshot / last-event position?). Distances in the shockwave lines are unreliable.
+Next: slices of the contact check and its helpers (S10), a live-position finder in the probe.
+
+## Fall path (static S9, 2026-11-03, Kathleen; static-map.md section 16)
+
+| Key | Address / offset | Confidence | Evidence |
+|---|---|---|---|
+| dispatcher inputs | `sub_83429560(r3 victim, r4 hitter or 0, r5 -> u32, r6 -> float)` | CANDIDATE (static, 3 callers agree) | `sub_8342B290` calls with r4 = 0, r5 -> 0, r6 -> *(0x82014BEC) |
+| dispatcher gate | `sub_8341D8C8(player)` -> 1 = may react | CANDIDATE | checks player+40, controller state, mode bytes |
+| state transition table | 0x82222AE8, 19 x 19 words [state * 19 + reaction id] | CANDIDATE | `sub_83429248` |
+| live position | *(player + 32) + 48: x, y, z, w (physics body) | OBSERVED (S10 static + round 13: moves with the pro) | velocity candidates body +0x50 / +0x60 / +0x70 (m per frame) |
+| player position | +0xD0 x, +0xD4 y, +0xD8 z (metres); facing +0xE0 | REJECTED as live position (round 12: stale for 32 s); a snapshot of some event | bench = 0, goalies at z +/-26 |
+
 ## Round 9 results (Kathleen, 2026-11-03 11:30; exhibition period + one full BAP game, no claim)
 
 | Key | Result | Confidence | Evidence |

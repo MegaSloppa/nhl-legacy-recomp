@@ -634,3 +634,51 @@ Updated static queue (replaces 14.3):
 3. Force fall (RE-3 open part): `sub_829380A0`, its callers, `sub_834E9FA8`, the snapshot callsites.
 4. Puck contact: `func sub_83328180` again with `callsite sub_83328180 --context 24` (codes, shooter).
 5. Rating ids: needs the pro's attribute screen from the owner (values at +1240).
+
+## 16. Round S9: reaction dispatcher inputs, fall path, positions (2026-11-03, Kathleen)
+
+Source: slices_s9.txt (owner) + the round 8 player dumps. All STATIC / CANDIDATE unless noted.
+- **Callers of the dispatcher `sub_83429560(victim, hitter, r5, r6)`** (all in file 134):
+  `sub_8342B8C8` calls it twice back to back (A on B, then B on A) with r5 / r6 = stack slots
+  (sp+88 / sp+80, then sp+92 / sp+84): the pairwise contact check. `sub_8342B290` calls it with
+  **r4 = 0 (no hitter)**, r5 -> u32 0, r6 -> float loaded from 0x82014BEC: a hitter-less reaction
+  (boards / glass / fall?). `sub_8342A2A8` passes r4 = r30, r5 = r21, r6 = r20 when the byte at
+  0x83C80C80 + 29 is set. So r5 = u32 in/out, r6 = float in/out (forwarded to the hit contact as
+  r7 / r8). A host call with scratch slots is safe to build.
+- Dispatcher body: gate `sub_8341D8C8` on both players; power `sub_833CA500(victim, hitter, &b81,
+  &b80, &f88)`; desc = `sub_833B9028`; new state = `sub_83429248(victim, desc+20)`; apply
+  `sub_83429300(victim, state)` unless already in it; hit contact; `sub_833FBEA0` (no-op);
+  `sub_8332D4D0(victim+80, 316, desc+8)` and `(..., 314, desc+12)` (two animation / physics
+  parameters from the reaction entry, HYPOTHESIS: fall strength / blend). Returns 1 if applied.
+- **Gate `sub_8341D8C8(player)`** -> 1 = may react: player+40 == 0 (or a power of two test), not in
+  controller state 11 (*(player+508)+144 -> +28), `sub_8332DD68(player+80)`, `sub_83413630`,
+  `sub_834F6588`, and mode-byte checks (0x83C80C80+29, 0x83C7F040+29 with `sub_834EAA80` /
+  `sub_834F2688`). HYPOTHESIS: "not already falling / fighting / in a scripted state".
+- **State choice `sub_83429248(player, reactionId)`**: current state = the first i < 19 with
+  `sub_8350C728(player, i)` (else `sub_83411A60(player)`); result = table 0x82222AE8[state * 19 +
+  reactionId] (19 x 19 words): a reaction state transition table. 19 = none.
+- **Apply `sub_83429300(player, state)`**: drives the animation controller *( *(player+80)+7344 )+20
+  through virtual calls (manager objects at 0x83C29790 + 520 / 524). Could be a direct "make him
+  fall" call, but the dispatcher path is simpler and keeps the game's bookkeeping.
+- `sub_829380A0` (2,148 lines, runs only on real falls): no direct callers (virtual), a low-level
+  pose / physics routine. Not an entry point.
+- **Player position (round 8 dumps, 40 objects): +0xD0 = x, +0xD4 = y (0 on the ice), +0xD8 = z
+  (metres)**, unit facing vector at +0xE0, two more position copies at +0xF0 / +0x110. On-ice
+  players have real coordinates, bench players 0, goalies at z = +/-26 (goal lines), bench home spots
+  at x = +/-12.95 in +0x1D0. CANDIDATE (one snapshot); round 12 uses it.
+- Velocity: not found yet; round 12 searches for it live (velocity-hunt lines).
+
+## 17. Round S10: the pairwise contact check (2026-11-03, Kathleen)
+
+`sub_8342B8C8` (only caller `sub_83457C30`) builds a list of players, then for every pair (A, B):
+- **Live position = *(player + 32) + 48** (vec4 x, y, z, w, loaded by vector ops; r23 = 48). The pair
+  passes when dx^2 + dz^2 < (tweak object gPlayerPlayerDistanceToEnable at 0x83C8F25C, N = 0x83C8F264, value at +40)^2 * const: a contact radius.
+- kind(A->B) = `sub_8341DA00(mgr, A, B)`, kind(B->A) likewise (mgr = *(0x83BB8288)); per-pair floats from
+  table 0x822229A0 [kind * 9 + ...]. If the mode byte 0x83BBC230 + 29 (r25) is set: `sub_8342A2A8` twice;
+  else `sub_833E0D20` both ways, gates `sub_8350FA80` / `sub_8350FB88`, then **the dispatcher both ways
+  with r5 -> kind of the hitter on the victim, r6 -> that float**, then **`sub_833DBD18(A, B, ...)` both
+  ways**. A per-pair interaction matrix at mgr+2596 (bytes) / mgr+2600 (floats, timers) is updated after.
+- Players whose +40 == 5 (or a list flag) go through `sub_8342B290` (the hitter-less dispatcher call).
+  `sub_8341D8C8` (dispatcher gate) requires +40 == 0: +40 looks like a physics / body mode.
+Round 12 passed kind 0 and skipped `sub_833DBD18`: the likely reason nothing fell. Round 13 copies
+the kind / float of the pro's last real knockdown and calls `sub_833DBD18` after the dispatcher.

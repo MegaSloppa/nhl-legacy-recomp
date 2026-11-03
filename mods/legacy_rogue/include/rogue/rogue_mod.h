@@ -49,4 +49,5 @@ void OnBapGameOver();     // game over seen: revert perks, keep the counters
 bool AwaitingResult();   // game over seen, result not entered yet
 bool AutoStarted();      // the current / last game was started by the poll
 bool AutoLifecycle();    // NHL_ROGUE_AUTO != 0
+void ShockwaveWindowTick();  // round 18 physics window (rogue_hooks.cpp), every frame from Tick
 }  // namespace rogue

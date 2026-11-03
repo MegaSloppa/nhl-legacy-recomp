@@ -562,3 +562,185 @@ Legacy Rogue: automatic pro + game lifecycle, perk Untouchable (rounds 9-11)
 - Docs: S1 / round 8 / round 9 results, full rating id map, checking data, user-guide 4h-4j.
 ```
 
+### 2026-11-03 (13:00) - Kathleen - Slices S9 read; shockwave test (probe round 12)
+**Objective:** Owner: can we knock nearby players down / fling them? Read slices_s9.txt and build a test.
+**Done:** static read (static-map.md 16, re-findings "Fall path"); positions from the round 8 dumps;
+round 12 probe: `MaybeShockwave` / `ForceKnockdown` in rogue_hooks.cpp (dispatcher called from our
+dispatcher hook after the original returns, scratch on the guest stack, power forced via the choice
+hook, no chain reactions, 1 s cooldown, max 8 targets, opponents on the ice only), Arm button + F8,
+velocity hunt thread in the static probe, panel section, fixed duplicate ImGui ids of "off" radios.
+**Files changed:** `src/rogue_hooks.cpp`, `src/rogue_static_probe.cpp`, `src/rogue_panel.cpp`,
+`src/rogue_mod.cpp`, `include/rogue/probe.h`, docs (static-map 16, re-findings, current-status,
+user-guide 4k, this file). Zip is cumulative (rounds 9-12).
+**Validation:** g++ 11 -fsyntax-only -Wall -Wextra on the 4 .cpp files against stub headers: PASS; no
+function overridden twice. Not compiled against the SDK, not run.
+**Hypotheses / unresolved:** host call of a guest function from a hook (first time in this mod);
+whether the forced fall looks like a knockdown or a stumble; fall direction; the velocity field.
+Forced knockdowns also count as the pro's knockdowns (live stats). Perk Shockwave stays inert until
+the test passes.
+**Next action:** BUILD-16 + user-guide 4k (owner).
+
+### 2026-11-03 (13:30) - Kathleen - Round 12 result: forced knockdowns accepted, no visible fall
+**Objective:** Read the shockwave test.
+**Done:** log analysis (re-findings.md "Round 12 result"): 28 forced dispatches, 20 accepted with the
+knockdown descriptor, no visible effect (owner); 8 refused on already-hit players; +0xD0 stale.
+**Files changed:** docs only (re-findings, current-status, this file).
+**Validation:** owner run (no crash), rogue_probe.txt / rogue_probe_s.txt.
+**Hypotheses / unresolved:** the fall is driven by the contact / interaction step or its physics data,
+not by the reaction state alone; where the live position is.
+**Next action:** slices S10:
+```powershell
+$t='mods/legacy_rogue/tools/slice_generated.py'; $o='slices_s10.txt'; Remove-Item $o -ErrorAction Ignore
+@('func sub_8342B8C8','callers sub_8342B8C8','func sub_8342B290','callers sub_8342B290',
+  'callers sub_8342A2A8','func sub_8350FB88','func sub_8350C728','func sub_833DBC50',
+  'offset 208 --float --max 60') | % {
+  "==== $_" | Out-File -Append -Encoding utf8 $o
+  python $t $_.Split(' ') | Out-File -Append -Encoding utf8 $o }
+```
+
+### 2026-11-03 (13:50) - Kathleen - Slices S10: contact check; shockwave round 13
+**Objective:** find why forced knockdowns do nothing.
+**Done:** read slices_s10.txt (static-map.md 17): live position *(player+32)+48; the contact check passes
+the dispatcher a contact kind + float and calls `sub_833DBD18` after it. Round 13 probe: learned kind
+mode (default) + post step (pass-through override of `sub_833DBD18` so it can be called), kind 0 mode for
+comparison, contact-args / forced log lines, live position for the shockwave, velocity hunt on the body
+(log every 100 samples).
+**Files changed:** `src/rogue_hooks.cpp`, `src/rogue_static_probe.cpp`, `src/rogue_panel.cpp`,
+`include/rogue/probe.h`, docs (static-map 17, re-findings, current-status, user-guide 4l, this file).
+**Validation:** g++ 11 -fsyntax-only -Wall -Wextra (stub headers): PASS; no function overridden twice.
+**Hypotheses / unresolved:** whether the kind is what triggers the fall; whether `sub_833DBD18` needs the
+real geometry; +40 meaning.
+**Next action:** BUILD-17 + user-guide 4l (owner).
+
+### 2026-11-03 (14:05) - Kathleen - Round 13 result; shockwave round 14
+**Objective:** read round 13 (first visible shockwave falls, inconsistent).
+**Done:** log analysis (re-findings.md "Round 13 result"): learning overwritten by a duplicate kind-0
+call, contact kinds, live position OK, velocity at body +0x50/+0x60/+0x70, bench players counted.
+Round 14: learn only kind != 0 + applied; default kind 6 / 0.25; on-ice filter (+0xD0 != 0); push test.
+**Files changed:** `src/rogue_hooks.cpp`, `src/rogue_static_probe.cpp`, `src/rogue_panel.cpp`,
+`include/rogue/probe.h`, docs (re-findings, current-status, user-guide 4m, this file).
+**Validation:** g++ 11 -fsyntax-only -Wall -Wextra (stub headers): PASS.
+**Hypotheses / unresolved:** kind 6 = body check; which velocity copy the physics uses; whether a push
+fights the game's own movement.
+**Next action:** BUILD-18 + user-guide 4m (owner).
+
+### 2026-11-03 (14:50) - Kathleen - Round 14 result; fall trace; round 15
+**Objective:** owner: no shockwave falls with kind 6.
+**Done:** matched the fall routine bursts (`call 829380A0`, rogue_probe.txt) with every knockdown in
+rounds 13-14: 8/8 natural skater knockdowns fell, 3/14 forced. Cause: the stored power slot (r1+84) was
+never forced. Round 15: pass-through hook `sub_833CA500` (forced power during shockwave calls), modes
+0 / 1 (default, kind 0 + post) / 2 (learned + post), on-ice |x| < 12.8 m.
+**Files changed:** `src/rogue_hooks.cpp`, `src/rogue_static_probe.cpp`, `src/rogue_panel.cpp`,
+`include/rogue/probe.h`, docs (re-findings, current-status, user-guide 4n, this file).
+**Validation:** g++ 11 -fsyntax-only -Wall -Wextra (stub headers): PASS; no duplicate overrides.
+**Hypotheses / unresolved:** whether the power slot is the whole story; Freight Train / Wrecking Ball also
+only force the choice (fine for real contacts, which fall on their own).
+**Next action:** BUILD-19 + user-guide 4n (owner).
+
+### 2026-11-03 (15:05) - Kathleen - Round 15 result; balance test (round 16)
+**Objective:** owner: still no shockwave falls (round 15).
+**Done:** forced power reached the stored slot (0.900 in reaction + contact lines) but 0 / 14 fall starts
+-> the reaction path is ruled out (re-findings "Round 15 result"). Round 16: pass-through override of
+`sub_834E9FA8` (balance penalty; logs natural calls), shockwave balance modes (game call with amount 5 /
+50 / 500, or write 100 to the balance-loss float), `forced-balance` log lines. Fixed hex slips in
+static-map.md 16-17.
+**Files changed:** `src/rogue_hooks.cpp`, `src/rogue_static_probe.cpp`, `src/rogue_panel.cpp`,
+`include/rogue/probe.h`, docs (re-findings, static-map, current-status, user-guide 4o, this file).
+**Validation:** g++ 11 -fsyntax-only -Wall -Wextra (stub headers): PASS; no duplicate overrides.
+**Hypotheses / unresolved:** whether +368 of *(*(player+80)+64) is the balance the fall code reads.
+**Next action:** BUILD-20 + user-guide 4o (owner).
+
+### 2026-11-03 (15:15) - Kathleen - Round 16 result; why round 13 worked; round 17
+**Objective:** owner: no falls with balance; why did round 13 drop some players?
+**Done:** balance lead rejected (no natural calls of `sub_834E9FA8`, balance 0 everywhere). Round 13's
+forced falls = the targets within 2 m (1.2 / 1.6 / 2.0 m), with the stored power left natural; 7 targets
+at 2.6 m+ stayed up; round 15's close targets with forced stored power did not fall. Round 17: stored
+power forcing optional (default off), balance off by default, 2 m radius option.
+**Files changed:** `src/rogue_hooks.cpp`, `src/rogue_static_probe.cpp`, `src/rogue_panel.cpp`,
+`include/rogue/probe.h`, docs (re-findings, current-status, user-guide 4p, this file).
+**Validation:** g++ 11 -fsyntax-only -Wall -Wextra (stub headers): PASS.
+**Hypotheses / unresolved:** falls need the game's own player-player physics to be active for the pair.
+**Next action:** BUILD-21 + user-guide 4p (owner).
+
+### 2026-11-03 (16:40) - Kathleen - Round 17 result; contact floor confirmed; round 18 physics window
+**Objective:** owner: shockwave still nothing (round 17); contact floor 0.10 works, wants 0.05.
+**Done:** re-findings "Round 17 result + contact floor". Round 18: contact floor 0.20 / 0.10 / 0.05 / 0.02;
+shockwave method "physics window" (default): `ShockwaveWindowTick` (rogue_hooks.cpp, called from Tick)
+raises gPlayerPlayerDistanceToEnable (feet) to the radius for 0.4 s through TweakIndex and restores it;
+during the window the choice hook (and, ticked, the power source) gives knockdown power to every real
+contact pro -> opposing skater. F8 opens the window directly (no contact needed).
+**Files changed:** `src/rogue_hooks.cpp`, `src/rogue_mod.cpp`, `include/rogue/rogue_mod.h`,
+`src/rogue_static_probe.cpp`, `include/rogue/probe.h`, `src/rogue_panel.cpp`, docs.
+**Validation:** g++ 11 -fsyntax-only -Wall -Wextra (stub headers): PASS.
+**Hypotheses / unresolved:** whether the contact check also gates on actual body overlap (then the
+window does nothing at range); side effects of a global physics range for 0.4 s.
+**Next action:** BUILD-22 + user-guide 4q (owner); contact-floor perk design (owner).
+
+### 2026-11-03 (17:05) - Kathleen - Round 18 result; shockwave parked; contact perks
+**Objective:** owner: physics window did nothing; contact floor 0.02 ~ 0.10; wants small contacts to
+become full knockdowns.
+**Done:** round 18 analysis (re-findings "Round 18 result"): no contacts at range; a promoted 0.23
+contact fell. Shockwave parked. Perks Heavy Shoulders (kContactFloor) and Bulldozer
+(kContactKnockdown) in perks.h / perk_catalog.cpp; `ContactFloor` in rogue_hooks.cpp applies the perk
+floors (probe test still works on top). design.md section 8, user-guide 4r.
+**Files changed:** `include/rogue/perks.h`, `src/perk_catalog.cpp`, `src/rogue_hooks.cpp`, docs. Zip is
+cumulative (rounds 9-19).
+**Validation:** g++ 11 -fsyntax-only -Wall -Wextra (stub headers) on rogue_hooks, perk_catalog,
+rogue_panel, run_state: PASS. Not run in game.
+**Hypotheses / unresolved:** how Bulldozer looks on 0.02 brushes; Hype inflation from knockdown counts.
+**Next action:** BUILD-23 + user-guide 4r, commit (owner).
+
+Commit message (owner, 2026-11-03 17:05):
+```
+Legacy Rogue: contact perks Heavy Shoulders + Bulldozer; shockwave probe (parked) (rounds 12-19)
+
+- New perks on the reaction choice hook, opposing skaters only: Heavy Shoulders (Rare, 3 stacks, light
+  contacts become hits, floor 0.20 / 0.10 / 0.05) and Bulldozer (Legendary, contacts >= 0.02 become
+  knockdowns). Built on the contact floor test (owner: works; promoted contacts fall).
+- Shockwave probe (Diagnostics, NHL_ROGUE_PROBE=1): own dispatcher calls, power at the source, balance,
+  physics-range window. No falls at range after 7 rounds: parked, perk inert.
+- Findings: live position *(player+32)+48, velocity body +0x50/+0x60/+0x70, contact check S9/S10,
+  contact kinds, gPlayerPlayerDistanceToEnable stock 9 ft. Docs: re-findings, static-map 16-17,
+  user-guide 4k-4r.
+```
+
+### 2026-11-03 (17:50) - Kathleen - Design direction: one career, league reacts; RE-9 anchors
+**Objective:** owner design talk on unlocks and meta.
+**Done:** design.md section 0 (owner direction: one career, no Legacy across careers, balance secondary,
+the game's own career layer must react: offers, trade interest, contracts, news, awards). Found string
+anchors for those systems in docs/franchise_re_strings.txt (docs/static/re9_anchors.txt). New tool
+`tools/refs_to.py` (functions referencing addresses, from the 2026-11-02 index).
+**Files changed:** `docs/design.md`, `docs/current-status.md`, `docs/static/re9_anchors.txt` (new),
+`tools/refs_to.py` (new), this file. No C++ change.
+**Validation:** refs_to.py tested in the agent sandbox on a synthetic index only.
+**Next action:** owner: `python mods/legacy_rogue/tools/refs_to.py <index_out>/func_index.tsv.gz --file
+mods/legacy_rogue/docs/static/re9_anchors.txt > refs_re9.txt`, upload; agent: pick functions, slices.
+
+### 2026-11-03 (18:00) - Kathleen - End of day: pinned, final commit of rounds 9-19
+**Objective:** owner: pin everything, prepare the final commit of the day.
+**Done:** cumulative package (every file changed since the uploaded repo), 00-START-HERE rule 2 updated
+(owner: changing the game's career data is fine), current-status end-of-day section with the pinned
+list, baseline note, commit message below.
+**Files changed:** see the zip (16 files + tools/refs_to.py + docs/static/re9_anchors.txt).
+**Validation:** every changed .cpp syntax-checked with g++ 11 against stub headers during the day (PASS).
+Owner builds ran through round 18; the round 19 perks and refs_to.py are not built / run yet.
+**Next action:** owner build + commit; next session see current-status "END OF DAY 2026-11-03".
+
+Commit message (owner, 2026-11-03 18:00):
+```
+Legacy Rogue: auto pro + lifecycle, perks Untouchable / Heavy Shoulders / Bulldozer, shockwave probe (parked), design direction
+
+Rounds 9-19 (2026-11-03):
+- Pro found automatically (game pointer 0x83C876D4, gated on match + BAP flag; CONFIRMED 2 games,
+  0 in exhibition). BAP games start / end from the game state machine (PRE_GAME / DONE); perks revert
+  at game over. NHL_ROGUE_AUTO=0 restores the manual flow.
+- Perks: Untouchable (Legendary, penalty decision cancelled for the pro), Heavy Shoulders (Rare,
+  3 stacks, light contacts become hits), Bulldozer (Legendary, contacts >= 0.02 become knockdowns).
+- Probe: penalty immunity test, contact floor test, shockwave tests (own dispatcher calls, power at the
+  source, balance, physics-range window; no falls at range: parked), velocity search, contact args.
+- Findings: rating id map, live position *(player+32)+48, velocity body +0x50/+0x60/+0x70, contact
+  check S9/S10, contact kinds, game state machine, penalty decide / apply, goal hook r4 = goalie.
+- Design: one career is the whole game, the league must react (offers, trades, news, awards);
+  changing the game's career data allowed (00-START-HERE rule 2). tools/refs_to.py + RE-9 anchors.
+```
+

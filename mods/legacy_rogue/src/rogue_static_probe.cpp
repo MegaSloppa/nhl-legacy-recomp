@@ -34,6 +34,7 @@
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
+#include <cmath>
 #include <cstring>
 #include <mutex>
 #include <thread>
@@ -254,6 +255,16 @@ std::atomic<bool> g_pen_immunity{false};  // round 9 behaviour test
 std::atomic<int> g_pen_blocked{0};
 std::atomic<float> g_floor_min{0.f};  // round 10 contact floor test
 std::atomic<int> g_floor_promoted{0};
+std::atomic<float> g_shock_radius{0.f};  // round 12 shockwave test
+std::atomic<bool> g_shock_armed{false};
+std::atomic<int> g_shock_count{0};
+std::atomic<int> g_shock_mode{1};  // round 15: 0 / 1 / 2, see ForceKnockdown
+std::atomic<float> g_shock_push{0.f};
+std::atomic<bool> g_shock_stored{false};
+std::atomic<int> g_shock_method{1};
+std::atomic<int> g_window_promoted{0};
+std::atomic<int> g_shock_bal{0};  // round 17: off by default (round 16: no effect)
+std::atomic<float> g_shock_bal_amt{50.f};
 
 void Log(const char* fmt, ...) {
   char buf[1024];
@@ -281,7 +292,7 @@ struct Budget {
     return n.fetch_add(1) < max_per_sec;
   }
 };
-Budget g_b_contact, g_b_decide, g_b_floor;
+Budget g_b_contact, g_b_decide, g_b_floor, g_b_args, g_b_bal;
 
 uint8_t* VBase() {
   auto* ks = rex::runtime::current_kernel_state();
@@ -380,10 +391,73 @@ void Sampler() {
   }
 }
 
+// Round 12/13: find the velocity field (round 13: in the physics body, every 100 samples). 10 times a second, while a BAP match runs and the pro moves,
+// correlate his position change (+0xD0 x, +0xD8 z, CANDIDATE) with every float pair (+o, +o+8) in the
+// first 1 KB of his object. Every 300 samples: the 6 best offsets by cosine, with the magnitude ratio
+// (value / metres moved per 0.1 s; a velocity in m/s gives ~10).
+float RawF32(const uint8_t* h) {
+  const uint32_t b = (uint32_t(h[0]) << 24) | (uint32_t(h[1]) << 16) | (uint32_t(h[2]) << 8) | h[3];
+  float f;
+  std::memcpy(&f, &b, 4);
+  return f;
+}
+void VelocityHunt() {
+  constexpr int kN = 254;
+  static double dot[kN], na[kN];
+  double nd = 0.0;
+  int samples = 0;
+  uint32_t lp = 0;
+  float lx = 0.f, lz = 0.f;
+  for (;;) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    const uint8_t* vb = VBase();
+    if (!vb || !U32(vb, kVaMatch) || U8(vb, kVaBapFlag) != 1) { lp = 0; continue; }
+    const uint32_t pl = U32(vb, kVaBapCache);
+    // Round 13: the physics body *(player + 32) (position at +48, S10), not the player object.
+    const uint32_t p = HeapPtr(pl) ? U32(vb, pl + 32) : 0u;
+    if (!HeapPtr(p) || !Readable(Host(vb, p), 1024)) { lp = 0; continue; }
+    const uint8_t* h = Host(vb, p);
+    const float x = RawF32(h + 48), z = RawF32(h + 56);
+    if (p != lp) { lp = p; lx = x; lz = z; continue; }
+    const float dx = x - lx, dz = z - lz;
+    lx = x;
+    lz = z;
+    if (dx * dx + dz * dz < 0.0025f || dx * dx + dz * dz > 25.f) continue;  // 5 cm .. 5 m per 0.1 s
+    for (int o = 0; o < kN; ++o) {
+      const float a = RawF32(h + 4 * o), b = RawF32(h + 4 * o + 8);
+      if (!std::isfinite(a) || !std::isfinite(b) || std::fabs(a) > 1e4f || std::fabs(b) > 1e4f) continue;
+      dot[o] += double(a) * dx + double(b) * dz;
+      na[o] += double(a) * a + double(b) * b;
+    }
+    nd += double(dx) * dx + double(dz) * dz;
+    if (samples == 1) Log("velocity-hunt first moving sample: body=%08X pos=(%.2f, %.2f)", p, double(x), double(z));
+    if (++samples % 100) continue;
+    int best[6] = {-1, -1, -1, -1, -1, -1};
+    double bc[6] = {-2, -2, -2, -2, -2, -2};
+    for (int o = 0; o < kN; ++o) {
+      if (na[o] <= 0.0) continue;
+      const double c = dot[o] / std::sqrt(na[o] * nd);
+      for (int k = 0; k < 6; ++k)
+        if (c > bc[k]) {
+          for (int m = 5; m > k; --m) { bc[m] = bc[m - 1]; best[m] = best[m - 1]; }
+          bc[k] = c; best[k] = o;
+          break;
+        }
+    }
+    char buf[512];
+    int w = std::snprintf(buf, sizeof(buf), "velocity-hunt samples=%d", samples);
+    for (int k = 0; k < 6 && best[k] >= 0; ++k)
+      w += std::snprintf(buf + w, sizeof(buf) - size_t(w), " +0x%03X cos=%.3f ratio=%.2f", unsigned(best[k] * 4),
+                         bc[k], std::sqrt(na[best[k]] / nd));
+    Log("%s", buf);
+  }
+}
+
 void Start() {
   if (g_started.exchange(true)) return;
   Log("static probe S1 started (static-map.md section 14)");
   std::thread(Sampler).detach();
+  std::thread(VelocityHunt).detach();
 }
 
 }  // namespace
@@ -526,4 +600,95 @@ void NoteContactFloorPromoted() {
   }
 }
 int ContactFloorPromoted() { return g_floor_promoted.load(); }
+void SetShockwaveTest(float radius) {
+  if (g_shock_radius.exchange(radius) != radius && Enabled()) {
+    Start();
+    Log("shockwave test radius=%.1f", double(radius));
+  }
+  if (radius <= 0.f) g_shock_armed.store(false);
+}
+float ShockwaveTest() { return Enabled() ? g_shock_radius.load() : 0.f; }
+void ArmShockwave() {
+  if (ShockwaveTest() <= 0.f) return;
+  if (!g_shock_armed.exchange(true)) { Start(); Log("shockwave ARMED"); }
+}
+bool TakeShockwaveArm() { return g_shock_armed.exchange(false); }
+bool ShockwaveArmed() { return g_shock_armed.load(); }
+void ShockwaveFired(const char* line, int knocked_down) {
+  g_shock_count.fetch_add(1);
+  if (!Enabled()) return;
+  Start();
+  Log("%s (knocked down %d)", line ? line : "shockwave", knocked_down);
+}
+int ShockwaveCount() { return g_shock_count.load(); }
+void SetShockwaveMode(int mode) {
+  if (g_shock_mode.exchange(mode) != mode && Enabled()) { Start(); Log("shockwave mode=%d", mode); }
+}
+int ShockwaveMode() { return g_shock_mode.load(); }
+void SetShockwavePush(float s) {
+  if (g_shock_push.exchange(s) != s && Enabled()) { Start(); Log("shockwave push=%.0f", double(s)); }
+}
+float ShockwavePush() { return g_shock_push.load(); }
+void SetShockwaveBalance(int m) {
+  if (g_shock_bal.exchange(m) != m && Enabled()) { Start(); Log("shockwave balance mode=%d", m); }
+}
+int ShockwaveBalance() { return g_shock_bal.load(); }
+void SetShockwaveForceStored(bool on) {
+  if (g_shock_stored.exchange(on) != on && Enabled()) { Start(); Log("shockwave force-stored=%d", int(on)); }
+}
+bool ShockwaveForceStored() { return g_shock_stored.load(); }
+void SetShockwaveMethod(int m) {
+  if (g_shock_method.exchange(m) != m && Enabled()) { Start(); Log("shockwave method=%d", m); }
+}
+int ShockwaveMethod() { return g_shock_method.load(); }
+void NoteWindowPromoted(uint32_t victim) {
+  const int n = g_window_promoted.fetch_add(1) + 1;
+  if (!Enabled() || !g_b_floor.Take(10)) return;
+  const uint8_t* vb = VBase();
+  Start();
+  Log("window PROMOTED #%d victim=%08X idx=%d", n, victim, vb ? Idx(vb, victim) : -1);
+}
+int WindowPromoted() { return g_window_promoted.load(); }
+void SetShockwaveBalanceAmount(float a) {
+  if (g_shock_bal_amt.exchange(a) != a && Enabled()) { Start(); Log("shockwave balance amount=%.0f", double(a)); }
+}
+float ShockwaveBalanceAmount() { return g_shock_bal_amt.load(); }
+void BalanceSeen(uint32_t player, uint32_t kind, float amount, float before, float after) {
+  if (!Enabled() || !g_b_bal.Take(4)) return;
+  const uint8_t* vb = VBase();
+  Start();
+  Log("balance-penalty player=%08X idx=%d kind=%u amount=%.3f balance %.2f -> %.2f", player,
+      vb ? Idx(vb, player) : -1, kind, double(amount), double(before), double(after));
+}
+void ForcedBalance(uint32_t victim, int mode, float before, float after) {
+  if (!Enabled()) return;
+  const uint8_t* vb = VBase();
+  Start();
+  Log("forced-balance victim=%08X idx=%d mode=%d balance %.2f -> %.2f", victim, vb ? Idx(vb, victim) : -1, mode,
+      double(before), double(after));
+}
+void ContactArgs(uint32_t victim, uint32_t hitter, bool pro_hit, uint32_t desc, uint32_t applied,
+                 uint32_t kind, uint32_t fac_bits, uint32_t v40_in, uint32_t v40_out) {
+  if (!Enabled() || !g_b_args.Take(10)) return;
+  float fac;
+  std::memcpy(&fac, &fac_bits, 4);
+  const uint8_t* vb = VBase();
+  Start();
+  Log("contact-args %s %s victim=%08X idx=%d hitter=%08X idx=%d applied=%u kind=%d fac=%.3f v40 %d->%d",
+      pro_hit ? "PRO-HITS" : "PRO-HIT", desc == 0x83ABF598u ? "KNOCKDOWN" : "hit", victim, vb ? Idx(vb, victim) : -1,
+      hitter, vb ? Idx(vb, hitter) : -1, applied, int32_t(kind), double(fac), int32_t(v40_in), int32_t(v40_out));
+}
+void ForcedArgs(uint32_t victim, int mode, uint32_t kind, bool ok, uint32_t v40_in, uint32_t v40_out) {
+  if (!Enabled()) return;
+  const uint8_t* vb = VBase();
+  Start();
+  Log("forced victim=%08X idx=%d mode=%d kind=%d result=%s v40 %d->%d", victim, vb ? Idx(vb, victim) : -1, mode,
+      int32_t(kind), ok ? "ok" : "refused", int32_t(v40_in), int32_t(v40_out));
+}
+void PollKeys() {
+  static bool prev = false;
+  const bool down = (GetAsyncKeyState(VK_F8) & 0x8000) != 0;
+  if (down && !prev) ArmShockwave();
+  prev = down;
+}
 }  // namespace rogue::probe
