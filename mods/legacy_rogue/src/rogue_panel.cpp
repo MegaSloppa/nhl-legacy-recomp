@@ -22,11 +22,14 @@ std::vector<ShopOffer> g_offer;
 GameStats g_manual;
 char g_career[64] = "career-1";
 int g_won = 1;
-const char* GameStateName(int32_t s) {
-  static const char* n[] = {"PRE_GAME", "PRE_FACEOFF", "SYNCHING", "FACEOFF", "GAME_ON", "GOOF_OFF",
-                            "PREFIGHT", "FIGHT", "POSTFIGHT", "DONE", "STORYTELLER", "NISVIEWER",
-                            "PRACTICE_GOOFOFF", "TUTORIAL_GOOFOFF"};
-  return (s >= 0 && s < 14) ? n[s] : "none";
+int g_box_seen = 0;  // RE-5: last box score copied into the result fields
+// GameStateName moved to rogue_mod.cpp (rogue_mod.h), BUG-3.
+// BUG-3: start / end history, newest first.
+void DrawLifecycleLog(const std::vector<LifecycleEvent>& log) {
+  if (log.empty()) { ImGui::TextDisabled("(empty)"); return; }
+  for (auto it = log.rbegin(); it != log.rend(); ++it)
+    ImGui::Text("%7.1f s  %-38s  %-11s match %04X  flag %d  pro %04X", double(it->t), it->what,
+                GameStateName(it->state), unsigned(it->match & 0xFFFFu), int(it->bap), unsigned(it->pro & 0xFFFFu));
 }
 const char* RarityName(Rarity r) {
   static const char* n[] = {"Common", "Rare", "Epic", "Legendary"};
@@ -65,178 +68,56 @@ void DrawPerkEffects() {
   ImGui::TreePop();
 }
 
-// RE-1 round 6: recent contacts as the hit watch sees them (newest first), the ME counters and
-// the power test.
-void PlayerTag(char* out, size_t n, uint32_t va, bool me, bool goalie, bool autom) {
-  if (me && autom) std::snprintf(out, n, "ME*");
-  else if (me) std::snprintf(out, n, "ME");
-  else if (autom) std::snprintf(out, n, "AUTO");
+// Recent contacts as the hit watch sees them (newest first): hitter -> victim, power, outcome. Kept for
+// perk tuning (Heavy Shoulders / Bulldozer floors). 2026-11-04: the round 6-8 extras (AUTO marker,
+// marker scan, power test) left the menu; their backends stay off.
+void PlayerTag(char* out, size_t n, uint32_t va, bool me, bool goalie) {
+  if (me) std::snprintf(out, n, "ME");
   else if (goalie) std::snprintf(out, n, "G%04X", unsigned(va & 0xFFFFu));
   else std::snprintf(out, n, "%04X", unsigned(va & 0xFFFFu));
 }
 void DrawHitWatch() {
-  ImGui::SeparatorText("Hit watch (RE-1 round 8)");
-  ImGui::TextWrapped("Every body contact shows on screen as hitter -> victim. ME = the player you "
-                     "claimed (Manual section: That was me). AUTO = the automatic marker being tested; ME* = "
-                     "both agree. G = goalie.");
   const probe::YouStats y = probe::YouCounts();
-  ImGui::Text("ME so far: %d hits, %d knockdowns of skaters, knocked down %d times", y.hits,
+  ImGui::Text("ME (claimed pro) so far: %d hits, %d knockdowns of skaters, knocked down %d times", y.hits,
               y.knockdowns, y.knocked_down);
   ImGui::SameLine();
   if (ImGui::SmallButton("Reset counts")) probe::YouReset();
-  ImGui::Text("AUTO marker vs claim: agree %d, missed you %d, marked someone else %d  |  "
-              "no claim: %d contacts with an AUTO player", y.auto_agree, y.auto_missed,
-              y.auto_wrong, y.auto_seen);
-  if (y.mk_secs) {
-    char now_s[64] = "";
-    if (y.mk_count)
-      std::snprintf(now_s, sizeof(now_s), ", first idx %d value %02X%s", y.mk_index,
-                    unsigned(y.mk_value) & 0xFFu,
-                    y.mk_player && y.mk_player == BapPlayer() ? " (ME)" : "");
-    ImGui::Text("Marker scan, %d s: none %d, one %d (ME %d), several %d, changes %d  |  now %d marked%s",
-                y.mk_secs, y.mk_none, y.mk_one, y.mk_one_me, y.mk_many, y.mk_changes, y.mk_count,
-                now_s);
-  }
-  ImGui::TextUnformatted("Power test (ME's hits only):");
-  const float k = probe::PowerTest();
-  const float opts[] = {1.f, 1.15f, 1.3f, 2.f};
-  const char* labels[] = {"off", "x1.15", "x1.3", "x2"};
-  for (int i = 0; i < 4; ++i) {
-    ImGui::SameLine();
-    if (ImGui::RadioButton(labels[i], k == opts[i])) probe::SetPowerTest(opts[i]);
-  }
   const int count = probe::HitEventCount();
   if (!count) { ImGui::TextDisabled("No contacts yet."); return; }
   const unsigned long now = probe::TickNow();
   for (int i = 0; i < count; ++i) {
     probe::HitEvent e;
     if (!probe::HitEventGet(i, &e)) break;
-    char hn[16], vn[16], st[8];
-    PlayerTag(hn, sizeof(hn), e.hitter, e.hitter_me, e.hitter_goalie, e.hitter_auto);
-    PlayerTag(vn, sizeof(vn), e.victim, e.victim_me, e.victim_goalie, e.victim_auto);
-    if (e.strength < 0) std::snprintf(st, sizeof(st), "-");
-    else std::snprintf(st, sizeof(st), "%d", e.strength);
-    ImGui::Text("%5.0f s ago  %5s -> %-5s  %-9s  power %.2f%s  str %s  credit %s  fall %s%s",
-                double(now - e.tick) / 1000.0, hn, vn, e.knockdown ? "KNOCKDOWN" : "hit",
-                double(e.power), e.boosted ? " (boosted)" : "", st, e.credited ? "yes" : "no",
-                e.fall ? "yes" : "no", e.counted ? "  [counted]" : "");
+    char hn[16], vn[16];
+    PlayerTag(hn, sizeof(hn), e.hitter, e.hitter_me, e.hitter_goalie);
+    PlayerTag(vn, sizeof(vn), e.victim, e.victim_me, e.victim_goalie);
+    ImGui::Text("%5.0f s ago  %5s -> %-5s  %-9s  power %.2f  fall %s%s", double(now - e.tick) / 1000.0, hn, vn,
+                e.knockdown ? "KNOCKDOWN" : "hit", double(e.power), e.fall ? "yes" : "no",
+                e.counted ? "  [counted]" : "");
   }
 }
 
+// 2026-11-04 trim: removed from the menu (backends kept where live hooks call them, all default off):
+// TUN-4 snapshots and the TUN-10 write tests (code removed), penalty immunity test (now the perk
+// Untouchable), contact floor test (now Heavy Shoulders / Bulldozer), shockwave tests (parked).
 void DrawDiagnostics() {
   if (!probe::Enabled()) return;
   ImGui::SeparatorText("Diagnostics (NHL_ROGUE_PROBE=1)");
-  ImGui::TextWrapped("TUN-4 tunable probe. Read-only. Each button appends one snapshot to "
-                     "rogue_probe.txt next to the exe.");
-  ImGui::BeginDisabled(probe::Busy());
-  if (ImGui::Button("Snapshot: menu")) probe::RunAsync("menu");
-  ImGui::SameLine();
-  if (ImGui::Button("Snapshot: in match")) probe::RunAsync("in match");
-  ImGui::SameLine();
-  if (ImGui::Button("Snapshot: after edit")) probe::RunAsync("after edit (GameSpeedLevel=20)");
-  if (ImGui::Button("Dump tweak catalog (TUN-9)")) probe::CatalogAsync();
+  ImGui::TextWrapped("Stat finder (RE-5): watches game memory during a Be-A-Pro game and writes "
+                     "rogue_stats_probe.txt next to the exe at game over.");
+  ImGui::TextDisabled("%s", probe::StatStatus());
+  if (ImGui::Button("Write stat report now")) probe::StatWriteNow();
   ImGui::SameLine();
   if (ImGui::Button("Mark log")) probe::Mark();
+  ImGui::SameLine();
+  ImGui::BeginDisabled(probe::Busy());
+  if (ImGui::Button("Dump tweak catalog (TUN-9)")) probe::CatalogAsync();
   ImGui::EndDisabled();
-  ImGui::TextDisabled("%s", probe::Status());
-  DrawHitWatch();
-
-  ImGui::SeparatorText("Penalty immunity test (round 9)");
-  bool pit = probe::PenaltyImmunityTest();
-  if (ImGui::Checkbox("Never call a penalty on my pro", &pit)) probe::SetPenaltyImmunityTest(pit);
-  ImGui::SameLine();
-  ImGui::TextDisabled("blocked so far: %d (logged to rogue_probe_s.txt)", probe::PenaltyImmunityBlocked());
-
-  ImGui::SeparatorText("Contact floor test (round 10)");
-  ImGui::TextWrapped("Your light contacts on opposing skaters become normal hits. Lower = more contacts count.");
-  const float fl = probe::ContactFloorTest();
-  const float fopts[] = {0.f, 0.2f, 0.1f, 0.05f, 0.02f};
-  const char* flabels[] = {"off##floor", "from 0.20##floor", "from 0.10##floor", "from 0.05##floor",
-                           "from 0.02##floor"};
-  for (int i = 0; i < 5; ++i) {
-    if (i) ImGui::SameLine();
-    if (ImGui::RadioButton(flabels[i], fl == fopts[i])) probe::SetContactFloorTest(fopts[i]);
+  ImGui::TextDisabled("Catalog: %s", probe::Status());
+  if (ImGui::TreeNode("Recent contacts (hit watch)")) {
+    DrawHitWatch();
+    ImGui::TreePop();
   }
-  ImGui::SameLine();
-  ImGui::TextDisabled("promoted so far: %d", probe::ContactFloorPromoted());
-
-  ImGui::SeparatorText("Shockwave test (round 12)");
-  ImGui::TextWrapped("When your pro lands a knockdown, opposing skaters within the radius are knocked down "
-                     "too. Arm (or F8): fires at your next contact of any kind.");
-  const float sr = probe::ShockwaveTest();
-  const float sopts[] = {0.f, 2.f, 3.f, 5.f, 8.f};
-  const char* slabels[] = {"off", "2 m", "3 m", "5 m", "8 m"};
-  for (int i = 0; i < 5; ++i) {
-    if (i) ImGui::SameLine();
-    char lb[24];
-    std::snprintf(lb, sizeof(lb), "%s##shock", slabels[i]);
-    if (ImGui::RadioButton(lb, sr == sopts[i])) probe::SetShockwaveTest(sopts[i]);
-  }
-  const int smeth = probe::ShockwaveMethod();
-  if (ImGui::RadioButton("physics window (round 18)##smeth", smeth == 1)) probe::SetShockwaveMethod(1);
-  ImGui::SameLine();
-  if (ImGui::RadioButton("own calls (rounds 12-17)##smeth", smeth == 0)) probe::SetShockwaveMethod(0);
-  if (smeth == 1)
-    ImGui::TextDisabled("F8 / Arm opens a 0.4 s window: every contact you make with an opponent is a knockdown "
-                        "(promoted so far: %d).", probe::WindowPromoted());
-  const int sm = probe::ShockwaveMode();
-  if (ImGui::RadioButton("kind 0, no post##smode", sm == 0)) probe::SetShockwaveMode(0);
-  ImGui::SameLine();
-  if (ImGui::RadioButton("kind 0 + post (default)##smode", sm == 1)) probe::SetShockwaveMode(1);
-  ImGui::SameLine();
-  if (ImGui::RadioButton("learned kind + post##smode", sm == 2)) probe::SetShockwaveMode(2);
-  bool fs = probe::ShockwaveForceStored();
-  if (ImGui::Checkbox("also force the stored power (rounds 15-16)##sfs", &fs)) probe::SetShockwaveForceStored(fs);
-  const int sb = probe::ShockwaveBalance();
-  const char* blabels[] = {"balance off##sbal", "balance hit (game)##sbal", "balance write 100##sbal"};
-  for (int i = 0; i < 3; ++i) {
-    if (i) ImGui::SameLine();
-    if (ImGui::RadioButton(blabels[i], sb == i)) probe::SetShockwaveBalance(i);
-  }
-  if (sb == 1) {
-    const float ba = probe::ShockwaveBalanceAmount();
-    const float bopts[] = {5.f, 50.f, 500.f};
-    const char* bal_l[] = {"amount 5##sbam", "amount 50##sbam", "amount 500##sbam"};
-    for (int i = 0; i < 3; ++i) {
-      if (i) ImGui::SameLine();
-      if (ImGui::RadioButton(bal_l[i], ba == bopts[i])) probe::SetShockwaveBalanceAmount(bopts[i]);
-    }
-  }
-  const float sp = probe::ShockwavePush();
-  const float popts[] = {0.f, 1.f, 2.f, 4.f};
-  const char* plabels[] = {"no push##spush", "push x1##spush", "push x2##spush", "push x4##spush"};
-  for (int i = 0; i < 4; ++i) {
-    if (i) ImGui::SameLine();
-    if (ImGui::RadioButton(plabels[i], sp == popts[i])) probe::SetShockwavePush(popts[i]);
-  }
-  ImGui::BeginDisabled(sr <= 0.f);
-  if (ImGui::Button(probe::ShockwaveArmed() ? "Armed (fires at your next contact)" : "Arm shockwave (F8)"))
-    probe::ArmShockwave();
-  ImGui::EndDisabled();
-  ImGui::SameLine();
-  ImGui::TextDisabled("fired so far: %d", probe::ShockwaveCount());
-
-  ImGui::SeparatorText("Write test (TUN-10 hip checks)");
-  ImGui::TextWrapped("Writes the field the game's code reads (or every game-style table entry). "
-                     "Restore, or restart the game, to undo. Every write is logged to rogue_probe.txt.");
-  for (int i = 0; i < probe::WriteTestCount(); ++i) {
-    ImGui::PushID(1000 + i);
-    ImGui::TextUnformatted(probe::WriteTestName(i));
-    for (int k = 0; k < 3; ++k) {
-      ImGui::PushID(k);
-      if (ImGui::SmallButton(probe::WriteTestPresetLabel(i, k))) probe::WriteTestApply(i, k);
-      ImGui::PopID();
-      ImGui::SameLine();
-    }
-    if (ImGui::SmallButton("Restore")) probe::WriteTestRestore(i);
-    char d[192];
-    probe::WriteTestDescribe(i, d, sizeof(d));
-    ImGui::TextDisabled("%s", d);
-    ImGui::PopID();
-  }
-  if (ImGui::Button("Hip check combo (guess)")) probe::WriteTestHipCombo();
-  ImGui::SameLine();
-  if (ImGui::Button("Restore all")) probe::WriteTestRestoreAll();
 }
 }  // namespace
 
@@ -318,9 +199,26 @@ void DrawPanel() {
                   InBapGame() ? (AutoStarted() ? "  |  game started automatically" : "  |  game started by hand") : "");
     if (!AutoLifecycle()) ImGui::TextDisabled("Automatic start / end is off (NHL_ROGUE_AUTO=0).");
   }
-  if (AwaitingResult())
+  if (AwaitingResult()) {
     ImGui::TextColored(ImVec4(1.f, 0.8f, 0.2f, 1.f),
                        "Game over detected, perks are off. Set Won / Lost and your line, then press BAP game ended.");
+    if (LastGameOverReason()[0]) ImGui::TextDisabled("Why: %s", LastGameOverReason());
+    // BUG-3: if the game is in fact still going on (the mod also does this by itself at the next faceoff).
+    if (ImGui::Button("Not over: resume this game (perks back on, counters kept)")) ResumeBapGame();
+  }
+  if (LifecycleResumes() > 0)
+    ImGui::TextColored(ImVec4(1.f, 0.5f, 0.2f, 1.f),
+                       "A false game over was undone %d time(s) this session. Please screenshot the start / end log.",
+                       LifecycleResumes());
+  if (ImGui::TreeNode("Start / end log")) {
+    ImGui::TextDisabled("Newest first. Times = seconds since the game was launched.");
+    DrawLifecycleLog(LifecycleLog());
+    if (!LifecycleLogAtGameOver().empty() && ImGui::TreeNode("At the last game over")) {
+      DrawLifecycleLog(LifecycleLogAtGameOver());
+      ImGui::TreePop();
+    }
+    ImGui::TreePop();
+  }
   if (!InBapGame() && ImGui::Button("BAP game started (only if it did not start by itself)")) {
     OnBapGameStart();
     probe::ResetPlayers();  // round 8: no player objects from an earlier game
@@ -351,6 +249,70 @@ void DrawPanel() {
     ImGui::TextDisabled("Your pro is not found yet: make a check, then press That was me.");
   else if (AwaitingResult())
     ImGui::Text("Last game: %d hits, %d knockdowns (counted by the mod)", r.live.hits, r.live.knockdowns);
+  // Round 28: Jet Skates sprint button.
+  if (Run().Stacks("jets") > 0) {
+    int n = 0;
+    const char* const* names = SprintButtonNames(&n);
+    const unsigned pad = PadButtonsNow();
+    ImGui::TextUnformatted("Jet Skates sprint button (the one you sprint with):");
+    for (int i = 0; i < n; ++i) {
+      if (i) ImGui::SameLine();
+      char lb[40];
+      std::snprintf(lb, sizeof(lb), "%s##sprint%d", names[i], i);
+      if (ImGui::RadioButton(lb, SprintButton() == i)) SetSprintButton(i);
+    }
+    if (pad == 0xFFFFFFFFu)
+      ImGui::TextColored(ImVec4(1.f, 0.6f, 0.2f, 1.f), "No XInput controller found: Jet Skates never triggers.");
+    else
+      ImGui::TextDisabled("Sprint button held: %s", SprintHeld() ? "YES (Jet Skates on)" : "no");
+  }
+  // Round 25: pro-only perks (shots / speed boost) - are the hooks seeing your pro?
+  {
+    bool any = false;
+    for (auto& o : r.perks)
+      if (auto* pd = FindPerk(o.id.c_str())) any = any || pd->scope == Scope::kProTunable || !std::strcmp(pd->id, "jets");
+    if (any && InBapGame()) {
+      const char* names[3] = {"shots", "wrist shots", "ratings"};
+      char line[256];
+      int w = std::snprintf(line, sizeof(line), "Your-only perks:");
+      for (int i = 0; i < 3 && w > 0 && w < int(sizeof(line)); ++i) {
+        unsigned calls = 0, mine = 0;
+        int reg = 0;
+        ProTunableStats(i, &calls, &mine, &reg);
+        w += std::snprintf(line + w, sizeof(line) - size_t(w), "  %s %u calls, yours %u%s%s", names[i], calls, mine,
+                           reg ? " (r" : "", reg ? (reg == 3 ? "3)" : reg == 4 ? "4)" : reg == 5 ? "5)" : "6+)") : "");
+      }
+      ImGui::TextDisabled("%s", line);
+    }
+  }
+  // RE-5 round 21: the game's own box score (addresses.h, OBSERVED in one game; check it).
+  if (InBapGame()) {
+    const BoxScore b = ReadBoxScore();
+    if (!b.valid) ImGui::TextDisabled("%s", BoxScoreStatus());
+    if (b.valid)
+      ImGui::TextDisabled("Game box score: %d G, %d A, %+d, %d SOG, %d hits, %d PIM, TOI %d:%02d  |  score %d-%d, shots %d-%d%s",
+                          b.goals, b.assists, b.plus_minus, b.shots, b.hits, b.pim, b.toi / 60, b.toi % 60, b.team_gf, b.team_ga,
+                          b.team_shots, b.opp_shots, b.identified ? "" : "  (your record: still a guess)");
+  }
+  if (AwaitingResult() && BoxScoreSerial() != g_box_seen) {
+    g_box_seen = BoxScoreSerial();
+    const BoxScore& b = LastBoxScore();
+    g_manual.goals = b.goals;
+    g_manual.assists = b.assists;
+    g_manual.hits = b.hits;
+    g_manual.plus_minus = b.plus_minus;
+    g_manual.shots = b.shots;
+    g_manual.team_gf = b.team_gf;
+    g_manual.team_ga = b.team_ga;
+    if (b.team_gf != b.team_ga) g_won = b.team_gf > b.team_ga ? 1 : 0;
+  }
+  if (AwaitingResult() && LastBoxScore().valid) {
+    const BoxScore& b = LastBoxScore();
+    ImGui::TextColored(ImVec4(0.5f, 1.f, 0.5f, 1.f), "Filled in from the game: %d G, %d A, %+d, %d hits; score %d-%d%s. Check, then press BAP game ended.",
+                       b.goals, b.assists, b.plus_minus, b.hits, b.team_gf, b.team_ga,
+                       b.team_gf == b.team_ga ? " (tied: shootout, set Won / Lost yourself)" : "");
+    if (!b.identified) ImGui::TextColored(ImVec4(1.f, 0.6f, 0.2f, 1.f), "Your record was guessed, not identified: check the numbers carefully.");
+  }
   ImGui::RadioButton("Won", &g_won, 1); ImGui::SameLine(); ImGui::RadioButton("Lost", &g_won, 0);
   ImGui::SetNextItemWidth(90); ImGui::InputInt("G", &g_manual.goals); ImGui::SameLine();
   ImGui::SetNextItemWidth(90); ImGui::InputInt("A", &g_manual.assists); ImGui::SameLine();

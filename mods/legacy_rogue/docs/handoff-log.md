@@ -744,3 +744,195 @@ Rounds 9-19 (2026-11-03):
   changing the game's career data allowed (00-START-HERE rule 2). tools/refs_to.py + RE-9 anchors.
 ```
 
+### 2026-11-04 (07:25) - Theresa - BUG-3: false game over after the 1st period (round 20)
+**Objective:** owner: with the probe off the automatic lifecycle reported game over after the 1st period
+(seen in the 3rd). Fix it; also: how close is an automatic stat line?
+**Done:** onboarded from the uploaded repo (AGENTS.md order). Read PollLifecycle: one poll with DONE
+entered, match 0 or BAP flag 0 ended the game; nothing could undo it (start needs a new match object).
+Fix: hold times (DONE 3 s, match / flag gone 10 s), auto resume at the next FACEOFF of the same game
+(same match or same pro object; PRE_GAME cancels), panel resume button, start / end log (panel; with
+the probe also rogue_probe_s.txt `lifecycle:` lines). GameStateName moved to rogue_mod.cpp.
+**Files changed:** `src/rogue_mod.cpp` - lifecycle hold times, resume, history; `include/rogue/rogue_mod.h`
+- LifecycleEvent + accessors, ResumeBapGame, GameStateName; `src/rogue_panel.cpp` - reason, resume
+button, start / end log; docs (current-status, user-guide 4s, this file). No new .cpp.
+**Validation:** g++ -std=c++20 -fsyntax-only -Wall -Wextra with a stub imgui.h on rogue_mod.cpp and
+rogue_panel.cpp: PASS, no warnings. Not compiled against the SDK, not run.
+**Proven:** the old code ends a game on a single poll (code read).
+**Hypotheses / unresolved:** the trigger. Candidates: a short match pointer / BAP flag drop (sim to next
+shift, intermission scenes, menus), or a DONE entered outside the real game end. FACEOFF = 3 is OBSERVED
+(S1), not CONFIRMED; it only gates the resume. Owner's "others knock down more easily": by code no
+(contact perks are pro -> opposing skater only).
+**Next action:** BUILD-24 + user-guide 4s (owner); then the RE-5 stat line probe (plan in the RE-5 row).
+
+### 2026-11-04 (07:55) - Theresa - Stat finder (RE-5) + probe menu trim
+**Objective:** owner: add the stat finder to the BUG-3 build; trim old diagnostics from the menu.
+**Done:** `src/rogue_stat_probe.cpp` (new, probe only, read-only): byte change counts over the pro / match
+objects, their pointed-to objects and the 0x83C00000 globals, checkpoints (start, goal / period end + 4 s,
+every 2 min, game over + 5 s), report rogue_stats_probe.txt. Goal / period end hooks (rogue_static_probe.cpp)
+feed labelled checkpoints; rogue_mod.cpp starts / ends / resumes it. Menu trimmed; TUN-4 snapshot, write
+tests and velocity hunt code removed; other test backends kept off (CLEAN-1).
+**Files changed:** `CMakeLists.txt` (new source), `src/rogue_stat_probe.cpp` (new), `include/rogue/probe.h`,
+`src/rogue_mod.cpp`, `src/rogue_static_probe.cpp`, `src/rogue_probe.cpp`, `src/rogue_panel.cpp`, docs
+(current-status, user-guide 4s, 00-START-HERE file map, this file). Cumulative with the 07:25 BUG-3 files.
+**Validation:** g++ -std=c++20 -fsyntax-only -Wall -Wextra against stub SDK / Windows / ImGui headers on every
+mod .cpp except fx.cpp (stub limits): PASS, no warnings. Not compiled against the SDK, not run.
+**Hypotheses / unresolved:** the stat line may live outside the watched regions (e.g. a roster / stats table not
+pointed to by the pro or the match); then the next round widens the regions. Report may be noisy (flags);
+the box score filters it.
+**Next action:** BUILD-24 + user-guide 4s (owner, `scripts\_game_ffx_build.bat`); agent reads rogue_stats_probe.txt.
+
+### 2026-11-04 (08:50) - Theresa - Stat finder result: box score found; auto-fill (round 21)
+**Objective:** owner uploaded rogue_stats_probe.txt + box score (4-2 loss, shots 36-27 for / against, pro 1 G,
+0 A, +1, 6 PIM, 13 SOG, 10 hits, 17:59 TOI); make the result automatic.
+**Done:** analysis: 86-byte stat records in the match object (re-findings.md "Round 20 stat finder"); every
+box score value and the team sums matched. Round 21: addresses.h box score block (OBSERVED), `ReadBoxScore` +
+`DumpBoxRecord` (rogue_hooks.cpp), game over reads it (rogue_mod.cpp), panel live box score + result auto-fill
+(rogue_panel.cpp), stat finder region order (globals last).
+**Files changed:** `include/rogue/addresses.h`, `include/rogue/rogue_mod.h`, `src/rogue_hooks.cpp`,
+`src/rogue_mod.cpp`, `src/rogue_panel.cpp`, `src/rogue_stat_probe.cpp`, docs (re-findings, current-status,
+user-guide 4t, this file). No new .cpp. Zip is cumulative since the uploaded repo.
+**Validation:** g++ -std=c++20 -fsyntax-only -Wall -Wextra against stub headers on all mod .cpp except fx.cpp:
+PASS. Not compiled against the SDK, not run.
+**Proven:** one game, all box score values (OBSERVED). Lifecycle clean in that game.
+**Hypotheses / unresolved:** mapping for a pro on the second team (idx 20-39); TOI field; whether the records
+are final at DONE (the score updated with a delay mid-game).
+**Next action:** BUILD-25 + user-guide 4t (owner).
+
+### 2026-11-04 (10:25) - Theresa - Round 21 result; box score locator (round 22)
+**Objective:** owner: no box score numbers in the menu (2-1 OT win, 0 G, 1 A, 0, 9 SOG, 2 PIM, 14 hits, 18:22).
+**Done:** rogue_probe_s.txt: pro idx 17 team 0, same match pointer all game, but match + 0x286 + 86 * 17 = 0xDB
+fill at game over: the records are a separate object (round 20 adjacency was chance). Locator in
+rogue_hooks.cpp (layout scan of 0x40000000-0x80000000 and 0xA0000000-0xC0000000 in 64 KB chunks, background
+thread, 20 s retry), ReadBoxScore on the located table, panel status line, probe logs (tables + pointers to
+them). addresses.h: fixed match offset removed, layout kept.
+**Files changed:** `include/rogue/addresses.h`, `include/rogue/rogue_mod.h`, `src/rogue_hooks.cpp`,
+`src/rogue_mod.cpp`, `src/rogue_panel.cpp`, docs (re-findings, current-status, user-guide 4u, this file).
+**Validation:** g++ -std=c++20 -fsyntax-only -Wall -Wextra (stub headers): PASS. Not compiled against the SDK.
+**Hypotheses / unresolved:** scan time on the owner's machine (logged); how many tables exist (copies, the
+other team); the pointer path; TOI.
+**Next action:** BUILD-26 + user-guide 4u (owner).
+
+### 2026-11-04 (11:02) - Theresa - Round 22 result; diagnostic round 23
+**Objective:** owner: extreme stutter every 20 s; stat line wrong (pro sat in the box: 0 G, 0 A, 0, 0 SOG,
+15 PIM, 1 hit, 0:41).
+**Done:** log analysis (re-findings.md "Round 22 result"): ~7 s scans; two copies of the OTHER team's table;
+pro idx 37. Round 23: scan removed from play; probe-only GameOverProbe in rogue_hooks.cpp (relaxed signature,
+table / pro dumps, two-level pointer search); panel says the box score is not available yet. Also fixed my zip
+timestamp practice (real clock, never future) and documented the Ninja "still dirty" fix (user-guide 7).
+**Files changed:** `src/rogue_hooks.cpp`, `src/rogue_mod.cpp`, `include/rogue/rogue_mod.h`, docs
+(re-findings, current-status, user-guide 4v + 7, 00-START-HERE rule 12, this file).
+**Validation:** g++ -std=c++20 -fsyntax-only -Wall -Wextra (stub headers): PASS. Not compiled against the SDK.
+**Next action:** BUILD-27 + user-guide 4v (owner).
+
+### 2026-11-04 (11:47) - Theresa - Round 23 result; box score round 24
+**Objective:** owner: 3-4 SO loss, shots 27-30, line 0 / 0 / 0, 6 SOG, 10 PIM, 14 hits, 13:04; no freeze noticed.
+**Done:** both team tables found (0x79C apart), pro in slot 16, TOI at P - 16; offline check: goalie TOI + 8
+skaters with TOI reject all garbage hits. rogue_hooks.cpp box score rewritten: cut-scene-only search (max 3,
+else at game over), TOI-tracking identification of the pro's record, GF from the opponent goalie, TOI in the
+panel; pointer-search probe removed. addresses.h: TOI, on-ice byte, GAME_ON / STORYTELLER states (OBSERVED).
+**Files changed:** `include/rogue/addresses.h`, `include/rogue/rogue_mod.h`, `src/rogue_hooks.cpp`,
+`src/rogue_mod.cpp`, `src/rogue_panel.cpp`, docs (re-findings, current-status, user-guide 4w, this file).
+**Validation:** g++ -std=c++20 -fsyntax-only -Wall -Wextra on every mod .cpp except fx.cpp (stub headers): PASS.
+**Hypotheses / unresolved:** whether linemates' TOI can out-score the pro (identification margin 6); shootout
+winner not in the stats (tie = owner picks); search safety while the game frees memory.
+**Next action:** BUILD-28 + user-guide 4w (owner).
+
+### 2026-11-04 (12:39) - Theresa - Round 24 result; faster search (round 25)
+**Objective:** owner: values correct; intermission stutter ~30 s.
+**Done:** ScanTables (rogue_hooks.cpp): resident pages only via K32QueryWorkingSetEx (run-time lookup, falls back
+to reading everything), stop at the first table with a partner 0x79C away, A-range first, 1 ms sleep per MB;
+probe line with KB read / skipped; panel shows the search time. Docs: box score fields CONFIRMED.
+**Files changed:** `src/rogue_hooks.cpp`, docs (re-findings, current-status, this file).
+**Validation:** g++ -std=c++20 -fsyntax-only -Wall -Wextra (stub headers): PASS. Not compiled against the SDK.
+**Hypotheses / unresolved:** that untouched-page allocation was the cost; a table straddling a non-resident page
+edge could be skipped (unlikely: tables are written all game).
+**Next action:** BUILD-29 (owner).
+
+### 2026-11-04 (12:45) - Theresa - Pro-only shot / skating perks (round 26)
+**Objective:** owner: shot perks made every player shoot harder; make the remaining tunable perks pro-only.
+**Done:** Scope::kProTunable (perks.h); Cannon, Quick Release, Sniper Scope, Jet Skates moved to it
+(perk_catalog.cpp); ApplyLayers skips it (rogue_mod.cpp); CachedPro() per frame; ProScope + pass-through
+overrides of sub_833E87E0 / sub_833ECF68 / sub_828B9258 (rogue_hooks.cpp; readers from tunable_readers.tsv
+and the TUN-8 note) raising the perk tunables only when r3..r10 contain the pro; per-hook counters in the panel.
+No duplicate overrides in the mod; none of the three is overridden in the parent sources.
+**Files changed:** `include/rogue/perks.h`, `src/perk_catalog.cpp`, `include/rogue/rogue_mod.h`,
+`src/rogue_mod.cpp`, `src/rogue_hooks.cpp`, `src/rogue_panel.cpp`, docs (current-status, user-guide 4x, this file).
+**Validation:** g++ -std=c++20 -fsyntax-only -Wall -Wextra on every mod .cpp except fx.cpp (stub headers): PASS.
+**Hypotheses / unresolved:** the pro is an argument of the three functions (counts will tell); Quick Release's
+tunable has no static reader (may do nothing); a concurrent reader on another thread would see the raised value.
+**Next action:** BUILD-29 + user-guide 4x (owner).
+
+### 2026-11-04 (13:54) - Theresa - Round 26 result; round 27 (search timing / copies / Jet Skates)
+**Objective:** owner: shot perks pro-only OK; speed boost 0 for the pro; negative team score; 20-30 s stutter in
+a penalty cut-scene.
+**Done:** log: 3 copies per team, pair distance not fixed, opponent copy slot 19 garbage, 190-245 MB read.
+rogue_hooks.cpp: box score block rewritten (period-end gated search, cheap rejects, copy groups + live copy,
+slot 19 check); speed boost hook removed; sub_83501A68 override (kRatingBoost) for Jet Skates. perks.h
+kRatingBoost; perk_catalog Jet Skates; rogue_static_probe.cpp period-end hook calls NotePeriodEnd (always).
+**Files changed:** `src/rogue_hooks.cpp`, `include/rogue/perks.h`, `src/perk_catalog.cpp`,
+`include/rogue/rogue_mod.h`, `src/rogue_static_probe.cpp`, `src/rogue_panel.cpp`, docs.
+**Validation:** g++ -std=c++20 -fsyntax-only -Wall -Wextra on every mod .cpp except fx.cpp (stub headers): PASS;
+no duplicate overrides.
+**Hypotheses / unresolved:** rating float scale (Jet Skates strength); search time after the cheap rejects.
+**Next action:** BUILD-30 + user-guide 4y (owner).
+
+### 2026-11-04 (14:10) - Theresa - Jet Skates sprint-only (round 28)
+**Objective:** owner: Jet Skates only while sprinting (it was always-on in round 27).
+**Done:** perks.h kSprintRatingBoost; perk_catalog Jet Skates (x1.12 speed / x1.25 acceleration per stack, sprint
+only); rogue_mod.cpp XInput poll (run-time load), SprintHeld / sprint button setting + rogue_settings.txt;
+rogue_hooks.cpp RatingScale honours the sprint kind; panel: sprint button picker, "held" readout, no-pad warning.
+**Files changed:** `include/rogue/perks.h`, `src/perk_catalog.cpp`, `include/rogue/rogue_mod.h`,
+`src/rogue_mod.cpp`, `src/rogue_hooks.cpp`, `src/rogue_panel.cpp`, docs (current-status, user-guide 4y, this file).
+**Validation:** g++ -std=c++20 -fsyntax-only -Wall -Wextra on every mod .cpp except fx.cpp (stub headers): PASS.
+**Hypotheses / unresolved:** the default sprint button (left stick click) may be wrong for the owner's controls;
+rating scale strength.
+**Next action:** BUILD-30 + user-guide 4y (owner).
+
+### 2026-11-04 (14:22) - Theresa - Sprint flag hunt (round 29)
+**Objective:** owner: DS4 via Steam (no XInput); find the game's sprint flag / function instead.
+**Done:** rogue_static_probe.cpp SprintHunt (probe only) + HuntReport; probe.h SprintHuntReport; rogue_mod.cpp
+calls it at game over. Statistics per byte / value: samples, speed (position delta of *(pro+32)+48/+56 at 20 Hz),
+energy drain (+360). Report = bytes whose non-usual values come with the largest speed increase (also drain).
+**Files changed:** `src/rogue_static_probe.cpp`, `include/rogue/probe.h`, `src/rogue_mod.cpp`, docs.
+**Validation:** g++ -std=c++20 -fsyntax-only -Wall -Wextra on every mod .cpp except fx.cpp (stub headers): PASS.
+**Hypotheses / unresolved:** the sprint state is a byte in the pro object or the body (it may live elsewhere,
+e.g. the controller / AI object; then the next hunt follows pointers). Speed from position assumes metres.
+**Next action:** BUILD-30 + user-guide 4z (owner); agent reads the sprint-hunt lines.
+
+### 2026-11-04 (15:20) - Theresa - Round 29 result; round 30
+**Objective:** owner: score wrong (3-3 SO vs real 4-3), line right, no stutter noticed, Jet Skates hard to feel.
+**Done:** log: marker 0x06 on the ice (identification + sprint hunt never saw an on-ice second); the two teams'
+tables merged into one group (same shots); search 1.8 s; BUG-3 root cause (single-poll BAP flag drops). Round 30:
+rogue_hooks.cpp (marker != 0xFF, content-hash groups, idx % 20 tie-break), rogue_static_probe.cpp (hunt marker),
+addresses.h comment.
+**Files changed:** `include/rogue/addresses.h`, `src/rogue_hooks.cpp`, `src/rogue_static_probe.cpp`, docs.
+**Validation:** g++ -std=c++20 -fsyntax-only -Wall -Wextra on every mod .cpp except fx.cpp (stub headers): PASS.
+**Next action:** BUILD-31 + user-guide 4z (owner); agent reads the sprint-hunt lines.
+
+### 2026-11-04 (15:25) - Theresa - End of day: commit of rounds 20-30
+**Objective:** owner: wrap up for a commit; continue next session.
+**Done:** cumulative package (every file changed since the uploaded repo), current-status end-of-day section with
+the pinned list, commit message below.
+**Files changed:** see the zip (17 files under mods/legacy_rogue, incl. the new src/rogue_stat_probe.cpp).
+**Validation:** every changed .cpp syntax-checked with g++ against stub headers (PASS). Owner builds / games ran
+through round 29; round 30 not built yet.
+**Next action:** current-status "END OF DAY 2026-11-04" item 1 (BUILD-31).
+
+Commit message (owner, 2026-11-04):
+```
+Legacy Rogue: box score from the game, pro-only perks, lifecycle fix (rounds 20-30)
+
+- BUG-3: automatic game over now needs DONE for 3 s / match or BAP flag gone for 10 s; root cause found
+  (single-poll BAP flag drops mid-game). A poll-made game over is undone at the next faceoff; panel
+  "Start / end log" and resume button.
+- RE-5: the game's own stat records (86-byte records per team: G, A, +/-, PIM, SOG, hits, TOI) are found by
+  layout in ONE background search in the 1st intermission (~2 s; resident pages only), copies grouped per
+  team, the pro's record identified by TOI ticking while he is on the ice. Panel shows the live line; the
+  result is filled in at game over (owner confirms). GF from the opponent goalie (counts simulated goals).
+- Perks: Cannon, Quick Release, Sniper Scope only for the pro (shot functions sub_833E87E0 / sub_833ECF68,
+  tunables raised only during the pro's calls; CONFIRMED). Jet Skates: sprint-only rating boost via an
+  override of sub_83501A68; trigger = XInput sprint button for now (does not see a DS4 via Steam).
+- Probe: stat finder (new rogue_stat_probe.cpp), sprint flag hunt, menu trimmed (old TUN-4 / write tests /
+  velocity hunt removed).
+- Docs: re-findings rounds 20-29, user-guide 4s-4z + Ninja "still dirty" fix, timestamp rule.
+```

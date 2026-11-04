@@ -1,6 +1,6 @@
 # 00 - Start here (agent onboarding)
 
-Last reviewed: 2026-11-03 by Kathleen (monday.com agent). Treat file/line references as hints;
+Last reviewed: 2026-11-04 by Theresa (monday.com agent). Treat file/line references as hints;
 verify against current source.
 
 ## 1. What this is
@@ -30,6 +30,8 @@ Repo: `MegaSloppa/nhl-legacy-recomp`, branch `legacy-rogue` (fork of
 
 Since round 9 (2026-11-03) the mod finds the pro itself (cached pointer, gated) and starts / ends the
 BAP game from the game's state machine, polled in `rogue::Tick`; `NHL_ROGUE_AUTO=0` restores the manual flow.
+Since 2026-11-04: end conditions need hold times (BUG-3), the box score is read from the game's stat records
+(rogue_hooks.cpp, RE-5), and shot perks act only for the pro (pass-through overrides of the shot functions).
 
 Key trick: most tunables are global (they buff everyone, CPU included). Make them per-player by
 (a) using the `gTweakByGameStyle*Level` (human) vs `*LevelCPU` split, or
@@ -70,7 +72,9 @@ Key trick: most tunables are global (they buff everyone, CPU included). Make the
     wiring is edited by the owner. If GitHub writes fail, ship a zip of CHANGED files only,
     laid out from the repo root (`mods/legacy_rogue/...`), so it unzips straight over the repo.
     Stamp zip entries with the owner's LOCAL time (Europe/Helsinki): UTC stamps unzip ~2 h old
-    and Ninja then skips the files (happened 2026-10-29). Do not write a commit message with
+    and Ninja then skips the files (happened 2026-10-29). Take the stamp from the real clock at packaging
+    time (zoneinfo Europe/Helsinki), never a typed guess and never a time ahead of now: a future stamp makes
+    Ninja re-run CMake until it gives up (happened 2026-11-04). Do not write a commit message with
     every delivery; only when the owner says they will commit or at a real checkpoint.
 13. **Hooks:** strong overrides catch direct AND indirect calls (the function table registers
     `sub_X`, verified 2026-10-29). A hook that never fires means the code is idle, not that the
@@ -94,7 +98,8 @@ mods/legacy_rogue/
     tweak_index.h               live tweak object index by name (N+32 + heap copy); perk write path
   src/                          implementations; rogue_hooks.cpp = guest hooks,
                                 rogue_probe.cpp = diagnostics (NHL_ROGUE_PROBE=1),
-                                rogue_static_probe.cpp = static-map probe S1 (rogue_probe_s.txt)
+                                rogue_static_probe.cpp = static-map probe S1 (rogue_probe_s.txt),
+                                rogue_stat_probe.cpp = stat finder RE-5 (rogue_stats_probe.txt)
   tools/find_bap_code.py        string/tunable anchor -> function cross-ref
   tools/perk_candidates.py      tunable search by theme
   tools/find_tweak_consumers.py static readers of tweak objects (TUN-8/9)

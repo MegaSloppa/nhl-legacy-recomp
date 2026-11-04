@@ -331,6 +331,100 @@ No probe needed; switch the probe's contact floor test OFF if you run with the p
 - Heavy Shoulders: light bumps stagger opponents; 1-3 stacks (floor 0.20 / 0.10 / 0.05).
 - Bulldozer: any contact on an opposing skater becomes a knockdown.
 
+### 4s. Round 20: false game over fix (BUG-3, 2026-11-04, Theresa)
+
+Build: `scripts\_game_ffx_build.bat` (a NEW .cpp was added, the incremental build is not enough this time).
+Run with `NHL_ROGUE=1` and `NHL_ROGUE_PROBE=1` (the stat finder needs the probe; the start / end log
+works either way and with the probe also goes to `rogue_probe_s.txt` as `lifecycle:` lines).
+1. Play one BAP game to the end as you normally would (sim to next shift, intermissions, menus).
+2. Glance at the panel at each intermission: "This game" should say the game started automatically and
+   must NOT say "Game over detected". The "Start / end log" node lists what the mod saw.
+3. If it happens again: the mod should undo it by itself at the next faceoff ("GAME RESUMED" popup;
+   the panel then shows an orange "false game over was undone" line). If it does not, press "Not over:
+   resume this game". Either way, screenshot "Start / end log" AND "At the last game over" (open both
+   nodes), and note what you were doing just before (intermission, sim, pause menu, replay, BAP screens).
+4. At the real end: "Game over detected" about 3 s after the game reaches DONE; enter the result as before.
+5. Stat finder (RE-5): nothing to do during the game. Diagnostics shows "Stat finder: watching ..." from
+   the game start. About 5 s after game over it writes `rogue_stats_probe.txt` next to the exe (status says
+   "report written"). Before leaving the post-game screens, screenshot or note the box score: final score,
+   shots per team, and your G, A, +/-, PIM, SOG, hits, TOI (and faceoffs if you take them). Simming shifts
+   is fine (the finder checkpoints every 2 minutes). Upload the txt + the box score.
+   "Write stat report now" writes the report early if a game is cut short.
+
+### 4t. Round 21: result filled in from the game (RE-5, 2026-11-04, Theresa)
+
+Build: `scripts\_build_vkffx_incr.bat` (no new .cpp). Probe on if you can (`NHL_ROGUE_PROBE=1`), for the TOI hunt.
+1. During the game the panel shows "Game box score: ..." (your G, A, +/-, SOG, hits, PIM, score, shots).
+   It should follow the game's own stats screen (score changes can lag a little after a goal).
+2. At game over the result fields are filled in (G, A, hits, +/-, Won / Lost from the score) with a green
+   "Filled in from the game" line. Compare with the box score, fix anything wrong, press "BAP game ended".
+   A tied score means a shootout: set Won / Lost yourself.
+3. Tell me: did the numbers match? Your TOI, and with the probe on upload `rogue_probe_s.txt` (the
+   `box: ...` and `box-record` lines are the ones I need). An orange "second team" line means your pro is on
+   the other side of the roster this game: say so, that case is not verified yet.
+
+### 4u. Round 22: box score located by the mod (RE-5, 2026-11-04, Theresa)
+
+Round 21 showed nothing because the game keeps the stats in a separate place each game; the mod now searches
+for them. Build: `scripts\_build_vkffx_incr.bat` (no new .cpp). Probe on (`NHL_ROGUE_PROBE=1`).
+1. In "This game" a grey line says "Game box score: not found yet" / "looking..." for the first minutes (the
+   search needs a few shots on goal), then "Game box score: 0 G, 0 A, ...". Note roughly when it appeared and
+   whether the game stuttered when it searched (once every 20 s until found).
+2. At game over the result fields are filled in (green line). Compare with the box score, then press "BAP game
+   ended".
+3. Upload `rogue_probe_s.txt` + the box score + your TOI. If the grey line ever says "several tables" or
+   "second team", mention it.
+
+### 4v. Round 23: box score diagnostic at game over (RE-5, 2026-11-04, Theresa)
+
+The search during play is gone (it caused round 22's stutter). Build: `scripts\_build_vkffx_incr.bat`. Probe on.
+1. Play one normal BAP game (on the ice, not in the box). The panel says the box score is not available yet:
+   expected, the auto-fill is paused this round. Enter the result by hand as before.
+2. Right after game over the game may freeze for a few seconds once (the diagnostic search). Tell me how long.
+3. Upload `rogue_probe_s.txt` + the box score: final score, shots for both teams, your G / A / +/- / SOG / PIM
+   / hits / TOI.
+
+### 4w. Round 24: box score, take 3 (RE-5, 2026-11-04, Theresa)
+
+Build: `scripts\_build_vkffx_incr.bat` (no new .cpp). Probe optional.
+1. The mod searches for the game's stats ONCE, during the first long cut-scene at least 2 minutes in (usually
+   the 1st intermission). A short stutter may happen there, never during play. Tell me if it stutters anywhere
+   else.
+2. After that the panel shows "identifying your record", then your live line with TOI (a "still a guess" note
+   until it is sure; it needs about 30 s of you on the ice).
+3. At game over the result fields are filled in (green line). A shootout shows as a tie: set Won / Lost
+   yourself. Compare with the box score and tell me what matched.
+
+### 4x. Rounds 25 + 26: faster stat search; shot / skating perks only for your pro (2026-11-04, Theresa)
+
+Build: `scripts\_build_vkffx_incr.bat` (no new .cpp). Own a few shot perks (Cannon, Sniper Scope, ...) and Jet Skates if you can.
+1. Stat search: how long was the stutter at the 1st intermission, and what search time does the panel show
+   ("search N s")?
+2. CPU players should shoot normally again. Your own shots should still be boosted.
+3. In "This game" a grey line "Your-only perks: shots N calls, yours M (rX) ..." counts how often the game's
+   shot / speed code ran for your pro. Screenshot it after a few of your shots. If "yours" stays 0 for shots
+   while you shoot, the perk does nothing for anyone this round; tell me and I'll move it to a rating boost.
+
+### 4y. Round 27: search in the intermission, copies, Jet Skates on your ratings (2026-11-04, Theresa)
+
+Build: `scripts\_build_vkffx_incr.bat` (no new .cpp). Own Jet Skates (and your shot perks).
+1. The stat search now waits for the first cut-scene AFTER a period ends (the 1st intermission). How long did it
+   stutter, and what search time does the panel show?
+2. Box score line and the filled-in result: score right this time? Does the line say "still a guess"?
+3. Jet Skates (round 28: sprint only). In "This game" pick the button you sprint with (default: left stick click);
+   the line below it says "Sprint button held: YES" while you hold it. Sprinting should feel faster than before,
+   normal skating unchanged. "Your-only perks ... ratings N calls, yours M" should rise during play. If sprinting
+   feels absurd or unchanged, say so: the rating scale is a test. XInput controllers only.
+
+### 4z. Round 29: sprint flag hunt (probe on, 2026-11-04, Theresa)
+
+Same build as 4y (no new .cpp). Run with `NHL_ROGUE_PROBE=1`. The Jet Skates button picker can be ignored (your
+DS4 is not seen as XInput; the perk does nothing this round).
+1. In a BAP game, during open play: sprint for 2-3 s, stop sprinting (keep skating) for 2-3 s, repeat 15-20
+   times over a few shifts. Also play normally the rest of the game.
+2. Note roughly how many sprint bursts you did, and anything unusual (e.g. sprinting ran out).
+3. Upload `rogue_probe_s.txt` (the `sprint-hunt` lines).
+
 ## 5. Starting a fresh agent session
 
 Paste:
@@ -403,3 +497,8 @@ Git, Python 3. Bootstrap order: `BOOTSTRAP.md` in the repo root.
     `.bat` / `.ps1` files under `scripts\` change line endings. To restore one:
     `git checkout 9d2ed9b -- scripts/<file>` (or `git fetch origin` then
     `git checkout origin/master -- scripts/<file>`; there is no local `master` branch).
+
+**Ninja "manifest 'build.ninja' still dirty after 100 tries" (2026-11-04).** A file is dated in the future
+(happened with an agent zip stamped a few minutes ahead of the real time). Fix, from the repo root in
+PowerShell: `Get-ChildItem -Recurse -File "mods\legacy_rogue" | ForEach-Object { $_.LastWriteTime = Get-Date }`,
+then build again. Find others: `Get-ChildItem -Recurse -File | Where-Object LastWriteTime -gt (Get-Date)`.

@@ -33,6 +33,38 @@
 // Goal scored (scorer ptr in a register) - currency, kGoalHeal.
 // #define ROGUE_ADDR_GOAL_SCORED      82XXXXXX
 
+// --- Box score (RE-5) ------------------------------------------------------------------------
+// Round 20 stat finder, 2026-11-04 (re-findings.md "Round 20 stat finder"). OBSERVED in ONE BAP game:
+// every value of the owner's box score matched (pro 1 G, 0 A, +1, 6 PIM, 13 SOG, 10 hits; 4-2 loss) and the
+// team sums matched (skater SOG 36, skater goals 2, goalie GA 4 with per-period GA 2/1/1 and SA 8/14/5 = 27).
+// Simulated goals ARE counted here. In addresses.h for the round 21 behaviour test (auto-fill of the result,
+// checked by the owner before it is used).
+// Per-player stat records: 20 records of 86 bytes, one per roster slot of a team (slot = player index % 20;
+// 18 / 19 = goalies). Round 21 (2026-11-04): the records are NOT at a fixed offset of the match object
+// (round 20 found them right after it, round 21 read 0xDB fill there: a separate heap object that happened to
+// sit next to it). Since round 22 they are FOUND by their layout (rogue_hooks.cpp, box score locator); the
+// field offsets below are relative to a record's +/- word (s16, big-endian).
+#define ROGUE_MATCH_STATS_STRIDE     86
+#define ROGUE_STAT_GOALS             (-8)
+#define ROGUE_STAT_ASSISTS           (-4)
+#define ROGUE_STAT_PIM               (-2)
+#define ROGUE_STAT_SOG               20
+#define ROGUE_STAT_HITS              22
+#define ROGUE_STAT_TOI               (-16)  // seconds (round 23: pro 784 = 13:04; goalies ~3880 in an OT game)
+// Round 23: skater goals (-8) miss SIMULATED goals; the goalie's goals against (-8 of slot 18 / 19) count
+// them, so a team's score = the other team's goalie GA. The pro's record is NOT always slot idx % 20
+// (round 23: idx 37 in slot 16, slot 17 empty) and tables have copies: the mod identifies the pro's record
+// by its TOI ticking while he is on the ice (+0x22C below).
+#define ROGUE_OFF_SKATER_ONICE       0x22C  // byte: 0xFF on the bench; on the ice 0x00 (S1, round 8) OR 0x06 (round 29
+                                            // BAP game; 0x06 also in exhibition): test != 0xFF (OBSERVED)
+#define ROGUE_GAME_STATE_GAME_ON     4      // OBSERVED (S1 state order)
+#define ROGUE_GAME_STATE_STORYTELLER 10     // OBSERVED (intermissions, replays)
+#define ROGUE_STAT_GOALIE_GA         (-8)
+#define ROGUE_STAT_GOALIE_SA         2
+// Player object: roster index byte (team * 20 + slot) at +57 (S1: the pro was idx 17, team 0; round 9: idx
+// 37, team 1). OBSERVED. Open: whether the records above follow the pro's team when he is idx 20-39.
+#define ROGUE_OFF_PLAYER_INDEX       57
+
 // --- Hitting -----------------------------------------------------------------
 // Hit contact: called once per player who REACTS to a body contact (so one collision gives 1-3
 // calls). r3 = player reacting (victim), r4 = player hitting, r5 -> float (hit power,

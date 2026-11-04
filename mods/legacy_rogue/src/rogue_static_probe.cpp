@@ -29,6 +29,7 @@
 #endif
 #include <windows.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdarg>
@@ -38,6 +39,7 @@
 #include <cstring>
 #include <mutex>
 #include <thread>
+#include <utility>
 
 #include <rex/filesystem.h>
 #include <rex/runtime.h>
@@ -391,65 +393,92 @@ void Sampler() {
   }
 }
 
-// Round 12/13: find the velocity field (round 13: in the physics body, every 100 samples). 10 times a second, while a BAP match runs and the pro moves,
-// correlate his position change (+0xD0 x, +0xD8 z, CANDIDATE) with every float pair (+o, +o+8) in the
-// first 1 KB of his object. Every 300 samples: the 6 best offsets by cosine, with the magnitude ratio
-// (value / metres moved per 0.1 s; a velocity in m/s gives ~10).
-float RawF32(const uint8_t* h) {
-  const uint32_t b = (uint32_t(h[0]) << 24) | (uint32_t(h[1]) << 16) | (uint32_t(h[2]) << 8) | h[3];
-  float f;
-  std::memcpy(&f, &b, 4);
-  return f;
+// Round 12-14 velocity hunt removed 2026-11-04 (done: velocity at body +0x50 / +0x60 / +0x70, re-findings.md).
+
+// Round 29 (2026-11-04): sprint flag hunt for Jet Skates (owner: DS4 via Steam, no XInput; wants the game's own
+// sprint state). 20 times a second, while the game is in GAME_ON and the pro is on the ice (+0x22C == 0), read
+// every byte of the pro object (0x7B0) [round 30: on the ice = +0x22C != 0xFF; round 29 collected nothing
+// because the marker was 0x06 that game] and of his physics body *(pro + 32) (0x200), plus his speed (live
+// position *(pro + 32) + 48 / + 56, CANDIDATE from S10, metres per second from the change) and his energy drain
+// (+360 per sample). Per byte and value: samples, summed speed, summed drain. A sprint flag is a byte whose
+// non-usual values come with clearly higher speed and drain. Report every 60 s: `sprint-hunt` lines.
+constexpr uint32_t kHuntPro = 0x7B0u, kHuntBody = 0x200u, kHuntN = kHuntPro + kHuntBody;
+struct HuntCell { uint32_t n; float speed, drain; };
+HuntCell* g_hunt = nullptr;  // [kHuntN][256]
+uint32_t g_hunt_toggles[kHuntN];
+uint8_t g_hunt_last[kHuntN];
+unsigned g_hunt_samples = 0;
+double g_hunt_speed_sum = 0.0;
+void HuntReport(const char* why) {
+  struct Cand { uint32_t off; int mode; uint32_t on_n, off_n, tog; double sp_on, sp_off, dr_on, dr_off; int on_val; };
+  Cand best[25];
+  int nb = 0;
+  for (uint32_t o = 0; o < kHuntN; ++o) {
+    const HuntCell* c = g_hunt + size_t(o) * 256u;
+    int mode = 0;
+    for (int v = 1; v < 256; ++v) if (c[v].n > c[mode].n) mode = v;
+    Cand x{o, mode, 0, c[mode].n, g_hunt_toggles[o], 0, 0, 0, 0, -1};
+    double sp = 0, dr = 0;
+    uint32_t on_top = 0;
+    for (int v = 0; v < 256; ++v) {
+      if (v == mode || !c[v].n) continue;
+      x.on_n += c[v].n; sp += c[v].speed; dr += c[v].drain;
+      if (c[v].n > on_top) { on_top = c[v].n; x.on_val = v; }
+    }
+    if (x.on_n < 30 || x.off_n < 30 || x.tog < 6) continue;
+    x.sp_on = sp / x.on_n; x.dr_on = dr / x.on_n;
+    x.sp_off = c[mode].speed / c[mode].n; x.dr_off = c[mode].drain / c[mode].n;
+    const double score = x.sp_on - x.sp_off;
+    int pos = nb < 25 ? nb++ : 24;
+    if (nb == 25 && pos == 24 && score <= best[24].sp_on - best[24].sp_off) continue;
+    best[pos] = x;
+    for (int i = pos; i > 0 && (best[i].sp_on - best[i].sp_off) > (best[i - 1].sp_on - best[i - 1].sp_off); --i) std::swap(best[i], best[i - 1]);
+  }
+  Log("sprint-hunt %s: %u samples on the ice, mean speed %.2f m/s; top bytes by speed when not at their usual value:", why,
+      g_hunt_samples, g_hunt_samples ? g_hunt_speed_sum / g_hunt_samples : 0.0);
+  for (int i = 0; i < nb; ++i) {
+    const Cand& x = best[i];
+    Log("sprint-hunt  %s+0x%03X usual=%02X other=%02X  on %u / off %u samples, toggles %u  speed %.2f vs %.2f  drain %.4f vs %.4f",
+        x.off < kHuntPro ? "pro" : "body", x.off < kHuntPro ? x.off : x.off - kHuntPro, x.mode, x.on_val & 0xFF, x.on_n,
+        x.off_n, x.tog, x.sp_on, x.sp_off, x.dr_on, x.dr_off);
+  }
 }
-void VelocityHunt() {
-  constexpr int kN = 254;
-  static double dot[kN], na[kN];
-  double nd = 0.0;
-  int samples = 0;
+void SprintHunt() {
+  g_hunt = new HuntCell[size_t(kHuntN) * 256u]();
+  uint8_t buf[kHuntN];
   uint32_t lp = 0;
-  float lx = 0.f, lz = 0.f;
+  float lx = 0.f, lz = 0.f, le = 0.f;
+  bool have = false;
+  auto next_report = std::chrono::steady_clock::now() + std::chrono::seconds(60);
   for (;;) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    if (std::chrono::steady_clock::now() >= next_report) {
+      next_report += std::chrono::seconds(60);
+      if (g_hunt_samples) HuntReport("60s");
+    }
     const uint8_t* vb = VBase();
-    if (!vb || !U32(vb, kVaMatch) || U8(vb, kVaBapFlag) != 1) { lp = 0; continue; }
+    if (!vb || !U32(vb, kVaMatch) || U8(vb, kVaBapFlag) != 1 || U32(vb, kVaGameState) != 4u) { have = false; continue; }
     const uint32_t pl = U32(vb, kVaBapCache);
-    // Round 13: the physics body *(player + 32) (position at +48, S10), not the player object.
-    const uint32_t p = HeapPtr(pl) ? U32(vb, pl + 32) : 0u;
-    if (!HeapPtr(p) || !Readable(Host(vb, p), 1024)) { lp = 0; continue; }
-    const uint8_t* h = Host(vb, p);
-    const float x = RawF32(h + 48), z = RawF32(h + 56);
-    if (p != lp) { lp = p; lx = x; lz = z; continue; }
-    const float dx = x - lx, dz = z - lz;
-    lx = x;
-    lz = z;
-    if (dx * dx + dz * dz < 0.0025f || dx * dx + dz * dz > 25.f) continue;  // 5 cm .. 5 m per 0.1 s
-    for (int o = 0; o < kN; ++o) {
-      const float a = RawF32(h + 4 * o), b = RawF32(h + 4 * o + 8);
-      if (!std::isfinite(a) || !std::isfinite(b) || std::fabs(a) > 1e4f || std::fabs(b) > 1e4f) continue;
-      dot[o] += double(a) * dx + double(b) * dz;
-      na[o] += double(a) * a + double(b) * b;
+    if (!HeapPtr(pl) || U8(vb, pl + kOffMarker) == 0xFF) { have = false; continue; }  // round 30: 0x06 on the ice too
+    const uint32_t body = U32(vb, pl + 32);
+    if (!HeapPtr(body) || !Readable(Host(vb, pl), kHuntPro) || !Readable(Host(vb, body), kHuntBody)) { have = false; continue; }
+    std::memcpy(buf, Host(vb, pl), kHuntPro);
+    std::memcpy(buf + kHuntPro, Host(vb, body), kHuntBody);
+    const float x = F32(vb, body + 48), zz = F32(vb, body + 56), e = F32(vb, pl + kOffEnergy);
+    if (!have || pl != lp) { have = true; lp = pl; lx = x; lz = zz; le = e; std::memcpy(g_hunt_last, buf, kHuntN); continue; }
+    const float dx = x - lx, dz = zz - lz;
+    const float speed = std::sqrt(dx * dx + dz * dz) / 0.05f;
+    const float drain = le - e;
+    lx = x; lz = zz; le = e;
+    if (!std::isfinite(speed) || speed > 30.f || !std::isfinite(drain) || std::fabs(drain) > 5.f) continue;
+    for (uint32_t o = 0; o < kHuntN; ++o) {
+      HuntCell& cell = g_hunt[size_t(o) * 256u + buf[o]];
+      ++cell.n; cell.speed += speed; cell.drain += drain;
+      if (buf[o] != g_hunt_last[o] && g_hunt_toggles[o] < 0xFFFFFFFFu) ++g_hunt_toggles[o];
     }
-    nd += double(dx) * dx + double(dz) * dz;
-    if (samples == 1) Log("velocity-hunt first moving sample: body=%08X pos=(%.2f, %.2f)", p, double(x), double(z));
-    if (++samples % 100) continue;
-    int best[6] = {-1, -1, -1, -1, -1, -1};
-    double bc[6] = {-2, -2, -2, -2, -2, -2};
-    for (int o = 0; o < kN; ++o) {
-      if (na[o] <= 0.0) continue;
-      const double c = dot[o] / std::sqrt(na[o] * nd);
-      for (int k = 0; k < 6; ++k)
-        if (c > bc[k]) {
-          for (int m = 5; m > k; --m) { bc[m] = bc[m - 1]; best[m] = best[m - 1]; }
-          bc[k] = c; best[k] = o;
-          break;
-        }
-    }
-    char buf[512];
-    int w = std::snprintf(buf, sizeof(buf), "velocity-hunt samples=%d", samples);
-    for (int k = 0; k < 6 && best[k] >= 0; ++k)
-      w += std::snprintf(buf + w, sizeof(buf) - size_t(w), " +0x%03X cos=%.3f ratio=%.2f", unsigned(best[k] * 4),
-                         bc[k], std::sqrt(na[best[k]] / nd));
-    Log("%s", buf);
+    std::memcpy(g_hunt_last, buf, kHuntN);
+    ++g_hunt_samples;
+    g_hunt_speed_sum += speed;
   }
 }
 
@@ -457,7 +486,7 @@ void Start() {
   if (g_started.exchange(true)) return;
   Log("static probe S1 started (static-map.md section 14)");
   std::thread(Sampler).detach();
-  std::thread(VelocityHunt).detach();
+  std::thread(SprintHunt).detach();  // round 29
 }
 
 }  // namespace
@@ -492,6 +521,14 @@ extern "C" REX_FUNC(sub_83480248) {
     Log("goal scorer=%08X idx=%d team=%d who=%s goalie=%08X idx=%d team=%d r9=%d period=%d lr=%08llX", scorer,
         Idx(base, scorer), Team(base, scorer), Who(base, scorer), goalie, Idx(base, goalie), Team(base, goalie),
         int32_t(kind), int32_t(U32(base, kVaPeriod)), lr);
+    // Round 20 stat finder: checkpoint a few seconds after the goal.
+    const uint32_t pro = rogue::AutoBapPlayer();
+    const int st = Team(base, scorer), pt = Team(base, pro);
+    char lb[64];
+    std::snprintf(lb, sizeof(lb), "goal by %s (period word %d)",
+                  scorer && scorer == pro ? "the PRO" : (st >= 0 && st == pt) ? "the pro's team" : "the opponent",
+                  int32_t(U32(base, kVaPeriod)));
+    rogue::probe::StatEvent(lb);
   }
   __imp__sub_83480248(ctx, base);
 }
@@ -505,8 +542,12 @@ extern "C" REX_FUNC(sub_8331F408) {
     Start();
     Log("period-end flag=%u period=%d state=%d", flag & 0xFFu, int32_t(U32(base, kVaPeriod)),
         int32_t(U32(base, kVaGameState)));
+    char lb[48];
+    std::snprintf(lb, sizeof(lb), "period end (period word %d)", int32_t(U32(base, kVaPeriod)));
+    rogue::probe::StatEvent(lb);  // round 20 stat finder
   }
   __imp__sub_8331F408(ctx, base);
+  rogue::NotePeriodEnd();  // round 27 (not probe-gated): the box score search waits for the intermission
 }
 
 // C. Puck contact: r3 puck, r4 player hit, r5 contact code; last-touch player index at puck+180.
@@ -555,6 +596,7 @@ extern "C" REX_FUNC(sub_82FEC310) {
 
 // ---------------------------------------------------------------- round 9 public helpers
 namespace rogue::probe {
+void SprintHuntReport() { if (g_hunt && g_hunt_samples) HuntReport("game over"); }  // round 29
 void StaticNote(const char* msg) {
   if (!Enabled() || !msg) return;
   Start();

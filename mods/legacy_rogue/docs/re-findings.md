@@ -46,6 +46,97 @@ only with log evidence. Reaction table entry names (image strings): 0 incidental
 | (energy / injury) | player +360 energy, +368 injury pointer | CANDIDATE | (11, 13) |
 | (players) | 0x83C1D080 players[team * 20 + slot] | CANDIDATE | (8) |
 
+## Round 29 result (2026-11-04, owner + Theresa)
+
+| Key | Result | Confidence | Evidence |
+|---|---|---|---|
+| BUG-3 root cause | the BAP flag 0x83AC5F63 drops to 0 for ONE poll mid-game (3 times: t=490 in period 1, 687, 987); the round 9 code ended the game on the first one | CONFIRMED | lifecycle lines "end check BAP flag 0 started ... cleared after 0.0 s"; the round 20 hold time absorbs them |
+| On-ice marker +0x22C | 0x06 on the ice in this BAP game (0x00 in S1 / round 8); 0xFF off | OBSERVED | player periodic lines; test != 0xFF |
+| Effect on round 27-29 code | TOI identification never counted an on-ice second (identified=0); sprint hunt collected 0 samples | OBSERVED | fixed in round 30 |
+| Stat search | 1.8 s (was 30-41 s), 83 deep checks, after the 1st period end | OBSERVED | owner noticed no stutter |
+| Grouping | both teams had 9 shots at the intermission: the (SOG, SA, TOI) key merged 2 + 2 copies into one group -> no opponent -> GF from skater goals (3, real 4) | OBSERVED | round 30 groups by a hash of all 20 records' TOI + SOG |
+| Pro's line | correct (fallback slot idx % 20 = 17) | OBSERVED | owner |
+
+## Round 26 result (2026-11-04, owner + Theresa)
+
+| Key | Result | Confidence | Evidence |
+|---|---|---|---|
+| Shot hooks sub_833E87E0 / sub_833ECF68 (pro in r3..r10) | pro-only shot perks WORK: pro shoots harder, others at baseline; wrist shot power (Quick Release x3) obvious | CONFIRMED (behaviour, owner) | |
+| Speed boost sub_828B9258 | tens of thousands of calls, 0 with the pro; counts rise when skipping cut-scenes to a faceoff | REJECTED as a per-player hook | Jet Skates moved to the rating override sub_83501A68 (round 27) |
+| Table copies | 6 tables = 3 identical copies per team; pair distance 0x6F0 this game (0x79C in round 23): NOT fixed | OBSERVED | stats-table lines |
+| Identification | identified=0 (copies tie); fallback slot idx % 20 = 17 was right this game | OBSERVED | round 23: slot 16 |
+| Score | GF read -9249: an opponent copy's goalie slot 19 was garbage at game over | OBSERVED | round 27 validates slot 19 + reads the live copy |
+| Search | 30-41 s, read 190-245 MB (residency halves it); most time = deep checks on all-zero memory | OBSERVED | owner: stutter in a penalty cut-scene |
+
+## Round 24 result (2026-11-04, owner)
+
+Values CORRECT (filled-in result matched the box score; pro identified). The single intermission search caused
+~30 s of stutter (round 23's game-over search stopped after 4 s at 8 garbage hits; with the strict check it reads
+the whole range). Working hypothesis: first reads of never-touched committed guest pages make Windows allocate
+them. Round 25: resident pages only (K32QueryWorkingSetEx), stop at the first team pair, A-range first.
+Layout + identification: promoted to CONFIRMED for the box score fields G, A, +/-, PIM, SOG, hits, TOI (two games:
+round 20 slot 17 / team 0, round 23-24 values matched); GF from the opponent goalie OBSERVED.
+
+## Round 23 result: both teams found; TOI field; pro not in slot idx % 20 (2026-11-04, owner + Theresa)
+
+Owner's game: 3-4 loss after a shootout (last goal hook: period 255), shots 27 (pro's team) / 30; pro 0 G, 0 A,
+0, 6 SOG, 10 PIM, 14 hits, TOI 13:04; pro idx 37 (team 1). Game-over probe: 8 layout hits in 4.0 s (pointer
+search afterwards: 110 s, in the background, owner noticed no freeze).
+| Key | Result | Confidence | Evidence |
+|---|---|---|---|
+| Pro's record | table p0 A276CFE2 slot 16: G 0, A 0, +/- 0, PIM 10, SOG 6, hits 14 = box score | OBSERVED | slot 17 (= idx % 20) empty, all zero |
+| TOI | s16 at P - 16, seconds: pro 0x0310 = 784 = 13:04; goalies 3877 / 3888 (OT game) | OBSERVED | exact match |
+| Two team tables | p0 A276C846 (team 0) and A276CFE2 (team 1), 0x79C apart; team 0 first | OBSERVED (1 game) | skater SOG 30 / 26, goalie SA 28 / 30, GA 3 / 3 (3-3 + shootout) |
+| Goals | skater goals (-8) miss simulated goals (skater sums 1 / 0 for 3 / 3); goalie GA counts them | OBSERVED | round 20: GA 4 with 2 sim goals |
+| False hits | 6 of 8 layout hits were garbage; goalie TOI >= 30 and >= 8 skaters with TOI reject all 6 | OBSERVED (offline check on the dumps) | |
+| Pointer path | owners of the table object are other heap objects (no image / match / pro word) | OBSERVED | stats-ptr / stats-ptr2 lines |
+
+## Round 22 result: locator found the other team only; scan too slow (2026-11-04, owner + Theresa)
+
+Owner's game: pro idx 37 (TEAM 1, first time since round 9), game misconduct in period 1, rest of the game in
+the box and simulated (game start to DONE ~2 min real time). Box score: 0 G, 0 A, 0, 0 SOG, 15 PIM, 1 hit,
+TOI 0:41.
+- Scan: 2.7 s, then ~6.8 s per pass, every 20 s until found: EXTREME stutter (owner). REJECTED for play.
+- Found 2 identical tables (p0 AA8CA7DC and AB260694: skater SOG 4, goalie GA 2 / SA 6) only after period 1:
+  copies of ONE team. Slot 17 of the picked copy: all zero (not the pro: 15 PIM) -> the other team (team 0).
+  The pro's team table was missed: its goalie had < 5 shots against (signature minimum).
+- At game over the picked copy's goalie words read 0xDBDB (being freed): copies can die before the result.
+- No word in match (16 KB), pro (8 KB) or globals 0x83C00000-0x83CC0000 points into [p0 - 0x400, p0].
+- Team block at p0 - 0x78 was 0 in both copies (round 20's team block is not part of these copies).
+- Round 23: no scan during play; probe-only diagnostic at game over (relaxed signature, full table dumps,
+  pro object dump, two-level pointer search over 0xA0000000-0xC0000000, 0x40000000-0x50000000, image
+  0x83000000-0x84000000).
+
+## Round 21 result: the stat records are a separate object (2026-11-04, owner + Theresa)
+
+Owner's game: 2-1 OT win, shots 23 / 35, pro 0 G, 1 A, 0, 9 SOG, 2 PIM, 14 hits, TOI 18:22. Pro idx 17 team 0
+again, match pointer AC7CC080 the whole game. The auto-fill showed nothing: at game over match + 0x286 + 86 * 17
+held only 0xDB bytes (`box-record` lines), i.e. memory that is not the stat records.
+- REJECTED: "stat records at match + 0x286". In round 20 they sat right after the match object by chance.
+- Still OBSERVED: the record layout (86 bytes, field offsets) from round 20.
+- Round 22: records found by layout (goalie SA / GA = sum of period values, plausible skater records), any
+  heap address; the probe logs every table found and every word in the match / pro / globals that points
+  just before it (pointer path, for a cheaper reader later).
+- Lifecycle: clean again (DONE 30 s after the OT goal; game over 3 s later; no resume). OT goal = period-end
+  flag 1, period word 3.
+
+## Round 20 stat finder: the game's box score in the match object (2026-11-04, owner + Theresa)
+
+Source: `rogue_stats_probe.txt` (one BAP game, 1,641 s, 22 checkpoints, 146 regions) + the owner's box score:
+4-2 loss, shots 36 (pro's team) / 27, pro 1 G, 0 A, +1, 6 PIM, 13 SOG, 10 hits, TOI 17:59.
+
+| Key | Result | Confidence | Evidence |
+|---|---|---|---|
+| Stat records | (location REJECTED in round 21, see above) match + 0x286 + 86 * slot = +/- (s16 BE) of roster slot 0..19 of the pro's team; G at -8, A at -4, PIM at -2, SOG at +20, hits at +22 (all s16) | OBSERVED (1 game), in addresses.h for the round 21 behaviour test | pro = slot 17: G 1, A 0, PIM 6 (2 / 4 / 6 by period), +/- -1 -> 0 -> +1, SOG 13, hits 10, all = box score. Skater SOG sum 36 = team shots; skater G sum 2 = team goals; 3 assists on 2 goals |
+| Goalie records (slots 18 / 19) | GA at -8, per-period GA at -6 / -4 / -2; SA at +2, per-period SA at +4 / +6 / +8 | OBSERVED | slot 18: GA 4 (2 / 1 / 1), SA 27 (8 / 14 / 5) = opponent goals / shots |
+| Team block | match + 0x1F4 = team goals (2); hi16 of match + 0x208 = goals against (4); match + 0x20C = shots (36), per-period shots at +0x210 / +0x212 / +0x214 (7 / 11 / 18) | OBSERVED | not used: the code sums the records instead |
+| Simulated goals | counted in the records (GA 4, goal hook saw 2 of the 4 opponent goals) | OBSERVED | goal hook fired 4 times for 6 goals |
+| Score update timing | records / team block change some time after the goal call (not within 4 s) | OBSERVED | the pro's goal at t=1479 showed at the t=1559 checkpoint |
+| Globals 0x83C36C30.. | index / permutation tables (0..174), NOT stats; they matched 13 / 10 / 6 / 27 / 36 by chance | REJECTED | values set once at t<=120 and never changed |
+| TOI | not found (changes every second, filtered out). Round 21 dumps the pro's whole record at game over | OPEN | |
+| Record mapping when the pro is idx 20-39 | unknown (this game: slot 17, the S1 pro index) | OPEN | round 21 panel flags it |
+| Lifecycle (BUG-3 build) | game over 7 s after the third period end, no false game over, no resume | OBSERVED (1 game) | checkpoint "game over" t=1641, period end t=1634 |
+
 ## Round 18 result: physics window (2026-11-03 17:00, owner + Kathleen)
 
 - gPlayerPlayerDistanceToEnable stock = **9.00 ft** (2.7 m); the window raised it to 16.4 ft. 30+ windows

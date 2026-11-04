@@ -1,6 +1,6 @@
 # Current status (AUTHORITATIVE)
 
-Last updated: 2026-11-03 (18:00, end of day) by Kathleen (monday.com agent). If this disagrees with another doc,
+Last updated: 2026-11-04 (15:25, end of day) by Theresa (monday.com agent). If this disagrees with another doc,
 this wins; fix the other doc.
 
 ## Baseline
@@ -34,6 +34,160 @@ this wins; fix the other doc.
   Every setup problem hit so far and its fix: `user-guide.md` section 7.
 - GitHub: agents can READ the fork but writes fail from the agent's connection. Deliver changes
   as a zip of changed files only (00-START-HERE rule 12).
+
+## END OF DAY 2026-11-04 (15:25): commit of rounds 20-30
+
+Owner commits this package (cumulative since the 2026-11-03 commit; commit message in the handoff entry below).
+**Built and played today:** rounds 20-29 (each round's result is in re-findings.md). **Round 30 is NOT built /
+played yet** (on-ice marker != 0xFF, team grouping by content hash, idx % 20 tie-break).
+Note: rogue_stat_probe.cpp was added in round 20 (CMakeLists.txt): a fresh checkout / clean build needs
+`scripts\_game_ffx_build.bat` once; incremental builds are fine afterwards.
+
+State of things:
+- Lifecycle (BUG-3): fixed and root cause known; clean in every game since round 20.
+- Box score (RE-5): pro's line right in every game since round 24; score wrong in rounds 26 / 29 (fixed in 27 / 30,
+  untested); shootouts show as a tie (owner sets Won / Lost). Search ~2 s at the 1st intermission.
+- Pro-only perks (PERK-1): shot perks CONFIRMED pro-only. Jet Skates: sprint-only rating boost, but its trigger
+  (XInput button) does not see the owner's DS4 via Steam, and the boost (x1.12 / x1.25) is too small to feel.
+
+Pinned for next session, in order:
+1. BUILD-31: one BAP game with the probe on (user-guide 4z): check the score and the "still a guess" note;
+   upload rogue_probe_s.txt for the sprint-hunt lines.
+2. Jet Skates on the game's own sprint flag (from the hunt; if no byte stands out, follow the pro's pointers);
+   then re-size the boost (owner: must be noticeable but not dumb). Remove the XInput path once the flag works.
+3. Automatic submit of the result (owner decides), then RE-9 (league reacts, owner priority), RE-11 (ratings past
+   99, same sub_83501A68 override), DES-3 (in-career unlocks).
+4. Low: CLEAN-1 (old probe backends), a direct pointer path to the stat tables (would also give a live line
+   before the 1st intermission).
+
+## Session 2026-11-04 (15:20): round 29 result; round 30 (on-ice marker, team grouping)
+
+Round 29 game: search 1.8 s (no stutter noticed); pro's line right; score 3-3 instead of 4-3; no sprint-hunt data.
+Causes (re-findings.md "Round 29 result"): on-ice marker was 0x06 (code expected 0x00) and both teams' tables
+were grouped as one. BUG-3 ROOT CAUSE found: single-poll BAP flag drops mid-game. Round 30 (no new .cpp,
+`scripts\_build_vkffx_incr.bat`): on ice = +0x22C != 0xFF (identification + sprint hunt); groups by content hash; slot idx % 20
+accepted when it is among the near-best TOI candidates. Owner: Jet Skates' current boost (x1.12 / x1.25 ratings)
+feels too small to notice; revisit the size once it is gated on the game's sprint flag.
+
+## Session 2026-11-04 (14:22): sprint flag hunt (round 29, same build as rounds 27-28)
+
+Owner: DS4 through Steam, so the XInput read (round 28) does not see the controller; wants the game's own sprint
+state. Round 29 (probe only, no new .cpp, `scripts\_build_vkffx_incr.bat`): `SprintHunt` thread in rogue_static_probe.cpp, 20 Hz
+while GAME_ON and the pro is on the ice: per byte of the pro object (0x7B0) and body (0x200) and per value,
+samples / speed (from the live position) / energy drain; `sprint-hunt` report every 60 s and at game over (top 25
+bytes whose unusual values come with higher speed). Jet Skates stays wired to SprintHeld() until the flag is
+known (so it does nothing on the owner's DS4 this round). Next: gate kSprintRatingBoost on the flag.
+
+## Session 2026-11-04 (14:10): Jet Skates sprint-only (round 28, same build as round 27)
+
+Owner: Jet Skates must stay a sprint perk (raw stat boosts are dull and easy to make overpowered). Round 28 (no
+new .cpp, `scripts\_build_vkffx_incr.bat`): EventKind::kSprintRatingBoost; Jet Skates = speed x1.12 / acceleration x1.25 per
+stack on the pro's effective ratings ONLY while the sprint button is held. The mod reads the first XInput pad
+every frame (xinput1_4 / 1_3 / 9_1_0 loaded at run time, no link change); sprint button chosen in the panel
+(default left stick click), saved in rogue_settings.txt next to the exe. Limits: XInput pads only; holding the
+button with no sprint left (stamina) still applies the boost. Later option: the game's own sprint flag in the
+player object (probe hunt), if the button proxy feels off.
+
+## Session 2026-11-04 (13:54): round 26 result; round 27
+
+Owner: shot perks now pro-only (CONFIRMED); speed boost hook never saw the pro; box score line right except a
+negative team score; search stutter 20-30 s in a penalty cut-scene. Round 27 (no new .cpp, `scripts\_build_vkffx_incr.bat`):
+search only in the first cut-scene after a period end (period-end hook -> NotePeriodEnd), cheap rejects before
+deep checks, copies grouped per team, live copy = highest TOI, goalie slot 19 validated, GF from the other
+group's goalie; Jet Skates = rating boost via an override of sub_83501A68 (speed x1.08, acceleration x1.12 per
+stack; behaviour test), speed boost hook removed. Panel counter 3 = "ratings".
+
+## Session 2026-11-04 (12:45): pro-only shot / skating perks (round 26, same build as round 25)
+
+Owner: with shot perks owned, every player shot very hard (the tunable perks were global). Round 26 (no new
+.cpp, `scripts\_build_vkffx_incr.bat`): new scope kProTunable (perks.h) for Cannon, Quick Release, Sniper Scope, Jet Skates;
+ApplyLayers no longer writes them; `ProScope` (rogue_hooks.cpp) raises their tunables only during calls of
+sub_833E87E0 (shot), sub_833ECF68 (wrist shot), sub_828B9258 (speed boost) whose r3..r10 hold the pro, and
+restores them after. Panel: "Your-only perks: ... calls, yours N (rX)". HYPOTHESIS: the pro is an argument of
+those functions; if "yours" stays 0 the perks do nothing (then the next step is the rating override
+sub_83501A68, RE-11). Iron Lungs / Captain's Aura (BAP line tunables), curses and Notoriety stay global by design.
+
+## Session 2026-11-04 (12:39): round 24 result (values right, 30 s stutter); round 25 search speed-up
+
+Owner: the filled-in values were correct; the one intermission search stuttered for ~30 s. Round 25 (no new
+.cpp, `scripts\_build_vkffx_incr.bat`): the search reads only resident pages, stops at the first team pair, yields every 1 MB;
+the panel shows how long the search took. Box score fields CONFIRMED (re-findings.md "Round 24 result").
+
+## Session 2026-11-04 (11:47): round 23 result; box score round 24
+
+Round 23 probe found both teams' tables and the pro's exact line in slot 16 (not idx % 20), plus TOI at
+P - 16 (re-findings.md "Round 23 result"). Round 24 (no new .cpp, `scripts\_build_vkffx_incr.bat`): one search per game,
+only in a cut-scene (STORYTELLER >= 4 s, >= 2 min into the game, max 3 tries; else at game over), with the
+stricter layout check (goalie TOI, 8+ skaters with TOI); the pro's record is identified by its TOI ticking
+while his on-ice byte (+0x22C) says on ice; GF from the other team's goalie GA; auto-fill back on, TOI shown.
+
+## Session 2026-11-04 (11:02): round 22 result; diagnostic round 23 (auto-fill paused)
+
+Round 22 game: extreme stutter from the 20 s scans (~7 s each); only the other team's table found (2 copies);
+pro was idx 37 (team 1). Round 23 (no new .cpp, `scripts\_build_vkffx_incr.bat`): no scan during play at all; the box score
+auto-fill is effectively paused (panel says so); with the probe one diagnostic search runs at game over and
+logs table dumps + pointer owners (re-findings.md "Round 22 result"). Goal: a pointer path from a known object
+to both teams' tables, then a reader with no scan. Also: zip timestamps are now taken from the real clock
+(BUILD troubleshooting in user-guide section 7).
+
+## Session 2026-11-04 (10:25): round 21 result; box score locator (round 22)
+
+Owner ran round 21: no box score in the panel. Cause: the stat records are their own heap object; round 20
+found them next to the match object by chance (re-findings.md "Round 21 result"). Round 22 (no new .cpp,
+`scripts\_build_vkffx_incr.bat`): `rogue_hooks.cpp` box score locator: background scan of the guest heap (20 s retry, during a
+BAP game) for the record layout; `ReadBoxScore` reads the table found (one table = the pro's team; several =
+by team order, flagged). Panel shows the search status until found (needs a few shots on goal). Probe logs
+`stats-scan` / `stats-table` / `stats-ptr` lines. Lifecycle clean in the round 21 game.
+
+## Session 2026-11-04 (08:50): stat finder result, box score auto-fill (round 21)
+
+Owner ran BUILD-24 (one full BAP game, probe on). **Box score FOUND** in the match object: per-player stat
+records (86 bytes, one per roster slot of the pro's team) give G / A / PIM / +/- / SOG / hits, the goalie
+records give GA / SA, sums give the team score and shots, simulated goals included (re-findings.md
+"Round 20 stat finder"). Lifecycle: game over 7 s after the third period end, no false game over.
+Round 21 (no new .cpp, `scripts\_build_vkffx_incr.bat`): `ReadBoxScore` (rogue_hooks.cpp, addresses.h OBSERVED block);
+panel shows the game's box score live and FILLS IN the result fields at game over (Won / Lost from the score;
+a tie = shootout, owner sets it). The owner still presses "BAP game ended" (check first). Probe: the pro's
+whole record is dumped at game over (`box-record` lines) to find TOI; stat finder now lists globals last.
+Open: pro on the second team (idx 20-39); TOI; PIM is shown but not used by the economy.
+
+## Session 2026-11-04 (07:55): stat finder (RE-5) + probe menu trim, same package as BUG-3
+
+Owner: add the stat finder to the BUG-3 build and trim old diagnostics. **NEW .cpp** `src/rogue_stat_probe.cpp`
+(added to CMakeLists.txt): owner builds with `scripts\_game_ffx_build.bat` this time.
+- Stat finder (probe only, read-only, no hooks of its own): from game start it reads the pro object (8 KB),
+  the match object (16 KB), up to 256 heap objects they point to (2 KB each) and the globals
+  0x83C00000-0x83CC0000 once a second, counts changes per byte, takes checkpoints at game start, 4 s after
+  every goal call / period end (labels: goal by the PRO / the pro's team / the opponent), every 2 min, and
+  5 s after game over, then writes `rogue_stats_probe.txt` (small integers that changed <= 120 times, value
+  at every checkpoint). Panel: status + "Write stat report now". Next: match against the owner's box score.
+- Trim: menu now = stat finder, Mark log, tweak catalog, recent contacts (collapsed). Code removed: TUN-4
+  snapshot, TUN-5b / TUN-10 write tests + hip combo (rogue_probe.cpp), velocity hunt (rogue_static_probe.cpp).
+  Menu only (backends kept, default off, because live hooks call them): power test, AUTO marker / marker
+  scan, penalty immunity test, contact floor test, shockwave tests. Removing those touches rogue_hooks.cpp:
+  do it with a real compile (task CLEAN-1).
+
+## Session 2026-11-04 (07:25): BUG-3, false game over after the 1st period
+
+Owner played a BAP game with the probe OFF and Heavy Shoulders + Bulldozer: the perks felt as intended
+(only trustworthy for the 1st period, see below). **BUG-3:** the automatic lifecycle reported game over
+somewhere after the 1st period (mid-period or intermission unknown; seen in the panel in the 3rd).
+Consequence: perks were OFF from that point (rule 3 revert), and the game could not restart itself (the
+start needs a new match object). No log exists (probe off), so the trigger is NOT known.
+Code (round 20, no new .cpp, incremental build): `src/rogue_mod.cpp`, `include/rogue/rogue_mod.h`,
+`src/rogue_panel.cpp`:
+- end conditions must hold: DONE (entered during the game) 3 s, match pointer 0 or BAP flag 0 for 10 s;
+- a poll-made game over is undone at the next FACEOFF of the same game (same match object or same pro
+  object); PRE_GAME (a new game loading) cancels that; panel button "Not over: resume this game";
+- panel "Start / end log": every state / match / BAP flag / pro change during a game, end checks that
+  started and cleared, and a frozen copy "At the last game over" with the reason. With the probe on the
+  same lines go to rogue_probe_s.txt (`lifecycle:`).
+Not compiled against the SDK (stub syntax check PASS). Test: user-guide 4s.
+Owner question "do other players knock down more easily?": by code, no. Heavy Shoulders / Bulldozer only
+change contacts where the hitter is the pro and the victim an opposing skater (rogue_hooks.cpp
+ContactFloor). Only GLOBAL layers touch everyone: the Notoriety reaction (more CPU checking from tier
+Rising, not harder hits) and global perks / curses (Glass Bones, Goon Squad).
+Automatic stat line: see the RE-5 row (plan, not started).
 
 ## END OF DAY 2026-11-03 (18:00): pinned, commit of rounds 9-19
 
@@ -343,6 +497,16 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 | BUILD-17 | Round 13 probe (learned contact kind + post step, live position) | U | DONE 2026-11-03 (some real falls; learning bug found) |
 | BUILD-16 | Round 12 probe (shockwave test, velocity hunt) | U | DONE 2026-11-03 (ran: fires, no visible fall, no crash) |
 | BUILD-15 | Rounds 10-11 package (start gate fix, contact floor test, perk Untouchable): `scripts\_build_vkffx_incr.bat`; commit + push | U | ACTIVE: owner commits 2026-11-03 12:15 (stub syntax check PASS, not compiled against the SDK yet). 4i (contact floor) optional, later |
+| BUILD-31 | Round 30: `scripts\_build_vkffx_incr.bat`, one BAP game with the probe on (user-guide 4z sprint pattern again); score + "still a guess" note | U | TODO |
+| BUILD-30 | Rounds 27-29: `scripts\_build_vkffx_incr.bat`, one BAP game with the probe on (user-guide 4y + 4z sprint pattern) | U | DONE 2026-11-04 (search 1.8 s; score 3-3 vs 4-3; no sprint data: marker 0x06) |
+| BUILD-29 | Rounds 25 + 26 (faster search; pro-only shot / skating perks): `scripts\_build_vkffx_incr.bat`, one BAP game with shot perks owned: stutter length + panel search time; CPU shots back to normal?; panel "Your-only perks" counts; your own shots still boosted? | U | DONE 2026-11-04 (shots pro-only OK; speed hook 0; negative GF; 20-30 s stutter) |
+| BUILD-28 | Round 24 box score (cut-scene search, TOI identification): `scripts\_build_vkffx_incr.bat`, one normal BAP game (user-guide 4w) | U | DONE 2026-11-04 (values correct; ~30 s intermission stutter) |
+| BUILD-27 | Round 23 diagnostic (no scan during play; game-over probe): `scripts\_build_vkffx_incr.bat`, one normal BAP game with the probe (user-guide 4v) | U | DONE 2026-11-04 (both tables, TOI field, pro in slot 16) |
+| BUILD-26 | Round 22 box score locator: `scripts\_build_vkffx_incr.bat`, one BAP game with the probe (user-guide 4u) | U | DONE 2026-11-04 (stutter; other team only) |
+| BUILD-25 | Round 21 box score auto-fill: `scripts\_build_vkffx_incr.bat`, one BAP game (user-guide 4t) | U | DONE 2026-11-04 (no box score: records not at the match offset; lifecycle clean) |
+| BUILD-24 | Round 20 package (BUG-3 fix + start / end log + stat finder + probe trim): NEW .cpp, so `scripts\_game_ffx_build.bat`; one full BAP game with NHL_ROGUE_PROBE=1 (user-guide 4s) | U | DONE 2026-11-04 (stat report uploaded; no false game over) |
+| CLEAN-1 | Remove the probe backends that left the menu 2026-11-04 (power test, marker scan, penalty / contact floor / shockwave tests) from rogue_probe.cpp, rogue_static_probe.cpp, rogue_hooks.cpp, probe.h. Needs a real compile | A+U | TODO (low) |
+| PERK-1 | Pro-only perks: shots DONE 2026-11-04 (kProTunable hooks CONFIRMED); Jet Skates via rating override sub_83501A68 (round 27, behaviour test). The same override can carry RE-11 (ratings past 99) | A+U | ACTIVE (BUILD-30) |
 | PARENT-1 | Tell the parent project: its Engine Tunables editor / `ITunableStore` writes record+8 (the type tag) instead of the live value N+32 (+ heap copy H+36); its `gDekeRatEffect` sanity value comes from the registration pool. Evidence: re-findings.md. Owner decides how to report (issue / PR) | Owner (agent drafts) | TODO |
 
 ### Bugs
@@ -350,6 +514,7 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 |---|---|---|
 | BUG-1 | Perk Shop: every non-curse offer stayed FREE after the free pick was used (`free` went negative) | FIXED 2026-10-29 (316c3a1) |
 | BUG-2 | Legacy Rogue section showed without `NHL_ROGUE=1` | FIXED 2026-10-29 (316c3a1) |
+| BUG-3 | (ROOT CAUSE 2026-11-04 round 29: single-poll BAP flag drops mid-game) Automatic lifecycle reported game over after the 1st period (owner 2026-11-04, probe off; trigger unknown). Perks were off for the rest of the game | FIX WRITTEN 2026-11-04 (round 20: hold times, auto resume at the next faceoff, start / end log). BUILD-24 game: clean (game over 7 s after the 3rd period end, no resume). Root cause still unknown; keep an eye on the start / end log |
 
 ### Tunable perks (no RE)
 | ID | Task | Who | Status |
@@ -375,7 +540,7 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 | RE-2 | Identify the BAP-controlled skater | A+U | DONE 2026-11-03: 0x83C876D4 (gated on match + BAP flag) CONFIRMED over 2 BAP games, 0 in exhibition; used by every hook since round 9. Claim buttons stay as an override |
 | RE-3 | Knockdown: fall entry point | A+U | PARTIAL 2026-11-03: real contacts promoted to a knockdown fall (CONFIRMED, contact perks). Knocking down players the pro does not touch: not found after 7 probe rounds (own dispatcher calls, power at the source, balance, physics range); PARKED |
 | RE-4 | Puck-vs-skater contact | A+U | TODO. S1: `sub_83328180` fires but the shooter field (puck+180) is always -1 and the codes are unclear; re-slice (static-map.md 15, item 4) |
-| RE-5 | BAP game start / end + final score + BAP player's stat line | A+U | PARTIAL 2026-11-03: start / end from the state machine (PRE_GAME / DONE, CONFIRMED, round 9 uses it). Final score still open: goal calls miss simulated goals, so the score must be read (static-map.md 15, item 2) |
+| RE-5 | BAP game start / end + final score + BAP player's stat line | A+U | PARTIAL 2026-11-03: start / end from the state machine (PRE_GAME / DONE, CONFIRMED, round 9 uses it). Final score still open: goal calls miss simulated goals, so the score must be read (static-map.md 15, item 2). Plan 2026-11-04 (owner: big QoL): READ the game's own numbers instead of counting events (sim goals skip the goal hook). Probe round: snapshot the match object and the pro object (+ objects they point to) at PRE_GAME, at each goal call and at DONE; report fields that step by +1 at goals and end equal to the owner's box score (the method that found the ratings at +1240). Stat finder RAN 2026-11-04: box score found (match object stat records, re-findings.md); round 21 auto-fills the result (BUILD-25). Then a confirm game, then wire into OnBapGameEnd. Estimate 2-3 owner games if the stats sit in or near those objects; more if they live in a separate stats table |
 | RE-6 | BAP stat-event stream | A+U | TODO. Event post function = 0x8299E478 (S1); slice it next (static-map.md 15, item 1) |
 | RE-7 | BAP career save identity | A+U | TODO |
 | RE-8 | BAP progression storage (lead: `BAP_PLAYER_GROWTH` @ 0x82035818) | A+U | TODO |
@@ -402,9 +567,9 @@ Who: A = any agent with no game access, U = needs the user to build/play/upload.
 
 ## Recommended next action
 
-1. Owner: build (`scripts\_build_vkffx_incr.bat`), commit + push (message in the 2026-11-03 18:00
-   handoff entry). Next session: quick BAP game with Untouchable, Heavy Shoulders, Bulldozer (4j / 4r).
-2. Then the pinned list above (owner picks; RE-9 is the stated priority).
+1. Owner: BUILD-31 (`scripts\_build_vkffx_incr.bat`), one BAP game with the probe (user-guide 4z): score right? "still a guess"
+   gone? upload rogue_probe_s.txt (sprint-hunt lines).
+2. Agent: gate Jet Skates on the sprint flag (and re-size its boost); then a commit checkpoint.
 
 ## How to verify the branch state without the owner
 

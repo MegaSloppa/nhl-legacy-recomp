@@ -5,23 +5,11 @@
 
 namespace rogue::probe {
 bool Enabled();                   // both env vars set
-bool Busy();                      // a snapshot is running on the worker thread
-void RunAsync(const char* label); // append one snapshot to rogue_probe.txt (next to the exe)
-const char* Status();             // one-line status for the panel
+bool Busy();                      // the tweak catalog dump is running
+const char* Status();             // one-line status for the panel (catalog dump)
 
-// TUN-5b write test: writes the field real code reads (N+32 + heap copy) for floats/ints, or
-// every entry of a game-style table. 3 presets per setting. Restart or Restore to undo.
-int WriteTestCount();
-const char* WriteTestName(int i);
-const char* WriteTestPresetLabel(int i, int p);  // p = 0..2
-bool WriteTestApply(int i, int p);
-void WriteTestRestore(int i);
-void WriteTestRestoreAll();
-void WriteTestDescribe(int i, char* buf, unsigned n);
 // TUN-9: write rogue_tweak_catalog.txt (tab-separated) (every tweak object, live value at N+32). Async.
 void CatalogAsync();
-// TUN-10: one-click hip-check guess (several tunables at once); undo with WriteTestRestoreAll.
-void WriteTestHipCombo();
 // RE-1 probes: write a MARK line to rogue_probe.txt (to line up the log with what you did).
 void Mark();
 
@@ -78,7 +66,8 @@ void DumpPlayersForClaim(uint32_t me);
 void ResetPlayers();
 
 // Static-map probe (rogue_static_probe.cpp, rogue_probe_s.txt). Round 9 additions:
-void StaticNote(const char* msg);         // one "note" line (lifecycle events from rogue_mod.cpp)
+void StaticNote(const char* msg);
+void SprintHuntReport();                 // round 29: final sprint-hunt lines (game over)         // one "note" line (lifecycle events from rogue_mod.cpp)
 // Penalty immunity behaviour test: the penalty decision sub_83487DC0 returns 0 when its offender is
 // the pro (rogue::ProPlayer). Off by default, panel checkbox; every block (test or perk) is logged.
 void SetPenaltyImmunityTest(bool on);
@@ -137,4 +126,13 @@ void ReactionBegin(uint32_t victim, uint32_t hitter);
 void ReactionEnd(uint32_t applied);
 double ReactionPowerIn(double power);
 void ReactionChosen(double power_in, double power_used, uint32_t desc, unsigned long long lr);
+
+// Round 20 stat finder (rogue_stat_probe.cpp, RE-5): watches game memory during a BAP game and writes
+// rogue_stats_probe.txt (small integers that changed, value at every checkpoint) at game over.
+void StatGameStart();               // rogue::OnBapGameStart
+void StatGameOver();                // rogue::OnBapGameOver: last checkpoint + report 5 s later
+void StatResume();                  // rogue::ResumeBapGame: keep watching the same game
+void StatEvent(const char* label);  // goal / period end hooks: checkpoint 4 s later
+void StatWriteNow();                // panel button
+const char* StatStatus();
 }  // namespace rogue::probe

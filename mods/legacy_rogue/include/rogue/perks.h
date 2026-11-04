@@ -17,6 +17,8 @@ enum class Scope : uint8_t {
   kHumanOnly,   // uses the gTweakByGameStyle*Level (human) vs *LevelCPU split
   kGlobal,      // affects every skater - arena/rule perks and curses
   kBapScoped,   // applied via ScopedTunable / event code inside a BAP-player hook
+  kProTunable,  // round 25: tunable mods applied ONLY while the game's shot / skating code runs for the
+                // pro (rogue_hooks.cpp ProScope); never written globally, so CPU players keep stock values
 };
 
 enum class EventKind : uint8_t {
@@ -31,6 +33,9 @@ enum class EventKind : uint8_t {
                         // 0.20 / 0.10 / 0.05 by stack count; LIVE 2026-11-03, contact floor test)
   kContactKnockdown,    // p0 = min contact power: the pro's contacts on opposing skaters at or above it
                         // become knockdowns (LIVE 2026-11-03; round 18: a 0.23 contact promoted -> fell)
+  kSprintRatingBoost,   // round 28: as kRatingBoost, but only while the sprint button is held (SprintHeld)
+  kRatingBoost,         // round 27: p0 = rating id (0 speed, 1 acceleration, ...), p1 = multiplier per stack on the
+                        // pro's effective rating (sub_83501A68 override; behaviour test)
 };
 
 struct EventEffect { EventKind kind = EventKind::kNone; float p0 = 0, p1 = 0; };

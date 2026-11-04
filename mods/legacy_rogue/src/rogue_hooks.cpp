@@ -18,6 +18,8 @@
 #include <cstring>
 #include <atomic>
 #include <random>
+#include <thread>
+#include <cstdarg>
 
 #include <rex/runtime.h>
 #include <rex/system/kernel_state.h>
@@ -165,6 +167,365 @@ GuestGame PollGuestGame() {
   g.bap = bap != 0;
 #endif
   return g;
+}
+
+// ---- RE-5 box score (round 27, 2026-11-04) ----------------------------------------------------------
+// Stat tables (20 x 86-byte records per team) are heap objects; each team's table can exist in several copies
+// (round 26: 3 + 3). No fixed path to them yet. So:
+//  - ONE background search per game, in the first cut-scene (STORYTELLER >= 2 s) AFTER A PERIOD END (period-end
+//    hook in rogue_static_probe.cpp calls NotePeriodEnd), so it lands in the 1st intermission, not in a penalty
+//    cut-scene (round 26 owner); max 3 tries, else once at game over.
+//  - Round 27 speed-up: the goalie record is rejected on cheap fields first (TOI, shots against >= 1, period-1
+//    shots >= 1) and VirtualQuery is skipped when the table lies inside the chunk (round 26 spent 30-41 s mostly
+//    on candidates of all-zero memory); resident pages only.
+//  - Copies with the same content form a group (= one team). The pro's record = the (group, slot) whose TOI ticks
+//    while he is on the ice; within a group the copy with the highest TOI is read (the live one). Fallback slot
+//    idx % 20.
+//  - GF = the other group's goalie GA (skater goals miss simulated goals); GA = own goalie GA. Goalie slot 19 is
+//    validated too (round 26: a copy's slot 19 read -9249).
+namespace {
+constexpr int kMaxStatTables = 8;
+constexpr uint32_t kRec = ROGUE_MATCH_STATS_STRIDE;
+std::atomic<uint32_t> g_tab[kMaxStatTables];  // guest address of slot 0's +/- word
+std::atomic<int> g_grp[kMaxStatTables];
+std::atomic<int> g_ntab{0};
+std::atomic<bool> g_scanning{false};
+std::atomic<uint32_t> g_scan_ms{0};
+std::atomic<int> g_period_ends{0};
+int g_tries = 0;
+bool g_story = false;
+std::chrono::steady_clock::time_point g_game_t0, g_story_t0, g_next_sample;
+int g_score[kMaxStatTables][18];
+int g_last_toi[kMaxStatTables][18];
+bool g_have_last = false;
+int g_on_samples = 0;
+
+inline int S16(const uint8_t* h) { return int(int16_t(uint16_t((uint16_t(h[0]) << 8) | h[1]))); }
+bool GoalieSig(const uint8_t* h, int min_sa) {  // h -> +/- word of goalie slot 18
+  const int sa = S16(h + 2);
+  if (sa < min_sa || sa > 90) return false;
+  const int s1 = S16(h + 4), s2 = S16(h + 6), s3 = S16(h + 8);
+  if (s1 < 0 || s1 > 40 || s2 < 0 || s2 > 40 || s3 < 0 || s3 > 40) return false;
+  const int ps = s1 + s2 + s3;
+  if (sa < ps || sa - ps > 20) return false;
+  const int ga = S16(h - 8), g1 = S16(h - 6), g2 = S16(h - 4), g3 = S16(h - 2);
+  if (ga < 0 || ga > 20 || g1 < 0 || g1 > 10 || g2 < 0 || g2 > 10 || g3 < 0 || g3 > 10) return false;
+  const int pg = g1 + g2 + g3;
+  return ga >= pg && ga - pg <= 3;
+}
+bool SkatersSig(const uint8_t* p0) {
+  int with_toi = 0;
+  for (uint32_t s = 0; s < 18; ++s) {
+    const uint8_t* r = p0 + kRec * s;
+    const int g = S16(r + ROGUE_STAT_GOALS), a = S16(r + ROGUE_STAT_ASSISTS), pim = S16(r + ROGUE_STAT_PIM);
+    const int pm = S16(r), sh = S16(r + ROGUE_STAT_SOG), hi = S16(r + ROGUE_STAT_HITS), toi = S16(r + ROGUE_STAT_TOI);
+    if (g < 0 || g > 10 || a < 0 || a > 10 || pim < 0 || pim > 60 || pm < -10 || pm > 10 || sh < 0 || sh > 30 ||
+        hi < 0 || hi > 40 || toi < 0 || toi > 4000)
+      return false;
+    with_toi += toi > 0;
+  }
+  return with_toi >= 8;
+}
+bool Goalie19Ok(const uint8_t* p0) {
+  const uint8_t* g = p0 + kRec * 19;
+  const int ga = S16(g - 8), sa = S16(g + 2), toi = S16(g + ROGUE_STAT_TOI);
+  return ga >= 0 && ga <= 20 && sa >= 0 && sa <= 90 && toi >= 0 && toi <= 5400;
+}
+bool TableReadable(uint8_t* base, uint32_t p0) {
+  return p0 > 0x100u && HostReadable(HostP(base, p0 - 0x80u), kRec * 20u + 0x80u);
+}
+bool TableBodyOk(const uint8_t* h) {
+  const int gt = S16(h + kRec * 18 + ROGUE_STAT_TOI);
+  return gt >= 30 && gt <= 5400 && GoalieSig(h + kRec * 18, 0) && SkatersSig(h) && Goalie19Ok(h);
+}
+bool TableOk(uint8_t* base, uint32_t p0) { return TableReadable(base, p0) && TableBodyOk(HostP(base, p0)); }
+int TotalToi(const uint8_t* h) {
+  int t = 0;
+  for (uint32_t s = 0; s < 20; ++s) t += S16(h + kRec * s + ROGUE_STAT_TOI);
+  return t;
+}
+void ProbeLine(const char* fmt, ...) {
+  if (!rogue::probe::Enabled()) return;
+  char line[300];
+  va_list ap;
+  va_start(ap, fmt);
+  std::vsnprintf(line, sizeof(line), fmt, ap);
+  va_end(ap);
+  rogue::probe::StaticNote(line);
+}
+
+struct WsExInfo { void* va; uintptr_t attr; };  // PSAPI_WORKING_SET_EX_INFORMATION; attr bit 0 = valid
+using QueryWsExFn = BOOL(WINAPI*)(HANDLE, void*, DWORD);
+QueryWsExFn WsExFn() {
+  static QueryWsExFn fn = [] {
+    HMODULE k = GetModuleHandleW(L"kernel32.dll");
+    return k ? reinterpret_cast<QueryWsExFn>(reinterpret_cast<void*>(GetProcAddress(k, "K32QueryWorkingSetEx"))) : nullptr;
+  }();
+  return fn;
+}
+uint32_t ResidentPages(const uint8_t* h) {  // bit i = 4 KB page i of the 64 KB chunk is resident
+  QueryWsExFn fn = WsExFn();
+  if (!fn) return 0xFFFFu;
+  WsExInfo info[16];
+  for (int p = 0; p < 16; ++p) { info[p].va = const_cast<uint8_t*>(h + 0x1000 * p); info[p].attr = 0; }
+  if (!fn(GetCurrentProcess(), info, DWORD(sizeof(info)))) return 0xFFFFu;
+  uint32_t m = 0;
+  for (int p = 0; p < 16; ++p) m |= uint32_t(info[p].attr & 1u) << p;
+  return m;
+}
+
+void ScanTables(uint8_t* base) {
+  const auto t0 = std::chrono::steady_clock::now();
+  uint32_t hits[kMaxStatTables];
+  int grp[kMaxStatTables];
+  int key[kMaxStatTables][3];
+  int n = 0, ngrp = 0;
+  unsigned read_kb = 0, skipped_kb = 0, deep = 0;
+  const uint32_t ranges[2][2] = {{0xA0000000u, 0xC0000000u}, {0x40000000u, 0x50000000u}};
+  for (int r = 0; r < 2 && !(r == 1 && n > 0); ++r)
+    for (uint64_t va = ranges[r][0]; va < ranges[r][1] && n < kMaxStatTables; va += 0x10000u) {
+      const uint8_t* h = HostP(base, uint32_t(va));
+      if (!HostReadable(h, 0x10000u)) continue;
+      const uint32_t res = ResidentPages(h);
+      if (!res) { skipped_kb += 64; continue; }
+      read_kb += 64;
+      for (uint32_t o = 16; o + 10 <= 0x10000u && n < kMaxStatTables; o += 2) {
+        if (!(res & (1u << (o >> 12))) || !(res & (1u << ((o - 16) >> 12)))) { o = ((o >> 12) + 1) * 0x1000u + 14u; continue; }
+        const uint8_t* g = h + o;
+        const int gt = S16(g - 16);  // goalie TOI
+        if (gt < 30 || gt > 5400) continue;
+        const int sa = S16(g + 2), s1 = S16(g + 4);
+        if (sa < 1 || sa > 90 || s1 < 1 || s1 > 40 || !GoalieSig(g, 1)) continue;
+        ++deep;
+        const uint32_t p0 = uint32_t(va) + o - kRec * 18u;
+        const bool inside = p0 >= uint32_t(va) + 0x80u && p0 + kRec * 20u <= uint32_t(va) + 0x10000u;
+        if (!(inside ? TableBodyOk(HostP(base, p0)) : TableOk(base, p0))) continue;
+        const uint8_t* ph = HostP(base, p0);
+        int sog = 0;
+        uint32_t hsh = 2166136261u;  // round 30: content hash (TOI + SOG of all 20 records): copies are identical,
+                                     // the two teams are not (round 29: both teams had 9 shots, the old key merged them)
+        for (uint32_t s = 0; s < 20; ++s) {
+          sog += s < 18 ? S16(ph + kRec * s + ROGUE_STAT_SOG) : 0;
+          hsh = (hsh ^ uint32_t(uint16_t(S16(ph + kRec * s + ROGUE_STAT_TOI)))) * 16777619u;
+          hsh = (hsh ^ uint32_t(uint16_t(S16(ph + kRec * s + ROGUE_STAT_SOG)))) * 16777619u;
+        }
+        const int kk[3] = {sog, sa, int(hsh)};
+        int gi = -1;
+        for (int q = 0; q < n && gi < 0; ++q)
+          if (key[q][0] == kk[0] && key[q][1] == kk[1] && key[q][2] == kk[2]) gi = grp[q];
+        if (gi < 0) gi = ngrp++;
+        key[n][0] = kk[0]; key[n][1] = kk[1]; key[n][2] = kk[2];
+        grp[n] = gi;
+        hits[n++] = p0;
+      }
+      std::this_thread::yield();
+    }
+  for (int q = 0; q < n; ++q) { g_tab[q].store(hits[q]); g_grp[q].store(grp[q]); }
+  g_ntab.store(n);
+  g_scan_ms.store(uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count()));
+  ProbeLine("stats-scan: %d table(s) in %d group(s), %u ms; read %u KB, skipped %u KB, %u deep checks; residency %s", n,
+            ngrp, g_scan_ms.load(), read_kb, skipped_kb, deep, WsExFn() ? "on" : "UNAVAILABLE");
+  for (int q = 0; q < n; ++q)
+    ProbeLine("stats-table #%d group %d p0=%08X skater SOG=%d goalie SA=%d hash=%08X", q, grp[q], hits[q], key[q][0], key[q][1], unsigned(key[q][2]));
+  g_scanning.store(false);
+}
+void StartScan(uint8_t* base) {
+  if (g_scanning.exchange(true)) return;
+  ++g_tries;
+  for (auto& row : g_score) for (int& v : row) v = 0;
+  g_have_last = false;
+  g_on_samples = 0;
+  std::thread(ScanTables, base).detach();
+}
+
+// Live copy of a group: the one with the highest total TOI that still passes the checks. -1 if none.
+int LiveCopy(uint8_t* base, int group) {
+  int best = -1, best_toi = -1;
+  for (int t = 0; t < g_ntab.load(); ++t) {
+    if (g_grp[t].load() != group) continue;
+    const uint32_t p0 = g_tab[t].load();
+    if (!TableOk(base, p0)) continue;
+    const int toi = TotalToi(HostP(base, p0));
+    if (toi > best_toi) { best_toi = toi; best = t; }
+  }
+  return best;
+}
+
+struct Pick { int group = -1, slot = -1; bool identified = false; };
+Pick ChoosePro(uint8_t* base, int idx) {
+  Pick p;
+  const int n = g_ntab.load();
+  int gs[kMaxStatTables][18];
+  bool used[kMaxStatTables] = {};
+  for (auto& row : gs) for (int& v : row) v = -1 << 30;
+  for (int t = 0; t < n; ++t) {
+    const int g = g_grp[t].load();
+    if (g < 0 || g >= kMaxStatTables) continue;
+    used[g] = true;
+    for (int s = 0; s < 18; ++s) gs[g][s] = std::max(gs[g][s], g_score[t][s]);
+  }
+  int best = -1 << 30, second = -1 << 30;
+  for (int g = 0; g < kMaxStatTables; ++g)
+    if (used[g])
+      for (int s = 0; s < 18; ++s) {
+        const int v = gs[g][s];
+        if (v > best) { second = best; best = v; p.group = g; p.slot = s; }
+        else if (v > second) second = v;
+      }
+  if (p.group >= 0 && g_on_samples >= 30 && best >= g_on_samples && best - second >= 6) { p.identified = true; return p; }
+  // Round 30: linemates tick together. If slot idx % 20 is among the near-best candidates, take it as identified.
+  if (p.group >= 0 && g_on_samples >= 30 && best >= g_on_samples && idx % 20 < 18)
+    for (int g = 0; g < kMaxStatTables; ++g)
+      if (used[g] && gs[g][idx % 20] >= best - 6) { p.group = g; p.slot = idx % 20; p.identified = true; return p; }
+  p = Pick{};
+  const int s = idx % 20;
+  if (s >= 18) return p;
+  for (int g = 0; g < kMaxStatTables; ++g) {
+    if (!used[g]) continue;
+    const int t = LiveCopy(base, g);
+    if (t >= 0 && S16(HostP(base, g_tab[t].load()) + kRec * uint32_t(s) + ROGUE_STAT_TOI) > 0) { p.group = g; p.slot = s; return p; }
+  }
+  return p;
+}
+}  // namespace
+
+void NotePeriodEnd() { g_period_ends.fetch_add(1); }
+
+void BoxScoreReset() {
+  g_ntab.store(0);
+  g_tries = 0;
+  g_story = false;
+  g_have_last = false;
+  g_on_samples = 0;
+  g_period_ends.store(0);
+  for (auto& row : g_score) for (int& v : row) v = 0;
+  g_game_t0 = std::chrono::steady_clock::now();
+}
+bool BoxScoreScanBusy() { return g_scanning.load(); }
+
+void BoxScoreTick() {
+  uint8_t* base = VBase();
+  if (!base || g_scanning.load()) return;
+  const GuestGame g = PollGuestGame();
+  const auto now = std::chrono::steady_clock::now();
+  if (g.state == ROGUE_GAME_STATE_STORYTELLER) {
+    if (!g_story) { g_story = true; g_story_t0 = now; }
+  } else {
+    g_story = false;
+  }
+  // Search: in the first cut-scene after a period end (the intermission), never during play.
+  if (g_ntab.load() == 0 && g_tries < 3 && g_period_ends.load() > 0 && g_story && now - g_story_t0 >= std::chrono::seconds(2)) {
+    StartScan(base);
+    return;
+  }
+  const int n = g_ntab.load();
+  if (!n || g.state != ROGUE_GAME_STATE_GAME_ON || now < g_next_sample) return;
+  g_next_sample = now + std::chrono::seconds(1);
+  const uint32_t pro = ReadAutoBapPlayer(base);
+  uint8_t marker = 0xFF;
+  if (!pro || !GuestU8(base, pro + ROGUE_OFF_SKATER_ONICE, &marker)) return;
+  const bool on = marker != 0xFF;  // round 30: 0x06 on the ice in round 29 (0x00 earlier)
+  for (int t = 0; t < n; ++t) {
+    const uint32_t p0 = g_tab[t].load();
+    if (!TableReadable(base, p0)) continue;
+    const uint8_t* h = HostP(base, p0);
+    for (int s = 0; s < 18; ++s) {
+      const int v = S16(h + kRec * uint32_t(s) + ROGUE_STAT_TOI);
+      if (g_have_last) {
+        const bool inc = v > g_last_toi[t][s];
+        g_score[t][s] += on ? (inc ? 2 : -2) : (inc ? -1 : 0);
+      }
+      g_last_toi[t][s] = v;
+    }
+  }
+  if (g_have_last && on) ++g_on_samples;
+  g_have_last = true;
+}
+
+void BoxScoreGameOver() {
+  uint8_t* base = VBase();
+  if (base && g_ntab.load() == 0) StartScan(base);
+}
+
+const char* BoxScoreStatus() {
+  static char buf[180];
+  if (g_scanning.load()) return "Game box score: looking for the game's stats (one search)...";
+  if (g_ntab.load() == 0)
+    std::snprintf(buf, sizeof(buf), "Game box score: not found yet (searches in the 1st intermission; %d tried)", g_tries);
+  else
+    std::snprintf(buf, sizeof(buf), "Game box score: %d table(s) found (search %.1f s), identifying your record (%d s on the ice so far)",
+                  g_ntab.load(), g_scan_ms.load() / 1000.0, g_on_samples);
+  return buf;
+}
+
+BoxScore ReadBoxScore() {
+  BoxScore b;
+#if defined(ROGUE_OFF_PLAYER_INDEX)
+  uint8_t* base = VBase();
+  const uint32_t pro = ReadAutoBapPlayer(base);
+  if (!pro) return b;
+  uint8_t idx = 0;
+  if (!GuestU8(base, pro + ROGUE_OFF_PLAYER_INDEX, &idx) || idx >= 40) return b;
+  b.index = idx;
+  b.second_team = idx >= 20;
+  b.tables = g_ntab.load();
+  if (b.tables <= 0) return b;
+  const Pick pk = ChoosePro(base, idx);
+  if (pk.group < 0) return b;
+  const int own = LiveCopy(base, pk.group);
+  if (own < 0) return b;
+  const uint32_t pm0 = g_tab[own].load();
+  b.slot = pk.slot;
+  b.identified = pk.identified;
+  const uint8_t* h = HostP(base, pm0);
+  auto s16 = [&](const uint8_t* t, int slot, int rel) { return S16(t + kRec * uint32_t(slot) + rel); };
+  int own_sog = 0, own_sa = 0, own_goals = 0;
+  for (int s = 0; s < 18; ++s) { own_sog += s16(h, s, ROGUE_STAT_SOG); own_goals += s16(h, s, ROGUE_STAT_GOALS); }
+  for (int s = 18; s < 20; ++s) { own_sa += s16(h, s, ROGUE_STAT_GOALIE_SA); b.team_ga += s16(h, s, ROGUE_STAT_GOALIE_GA); }
+  b.team_shots = own_sog;
+  b.opp_shots = own_sa;
+  // The other team: another group whose goalie faced our shots and whose skaters took the shots we faced.
+  int best_d = 5, opp = -1;
+  for (int g = 0; g < kMaxStatTables; ++g) {
+    if (g == pk.group) continue;
+    const int t = LiveCopy(base, g);
+    if (t < 0) continue;
+    const uint8_t* q = HostP(base, g_tab[t].load());
+    int sog = 0, sa = 0;
+    for (int s = 0; s < 18; ++s) sog += s16(q, s, ROGUE_STAT_SOG);
+    for (int s = 18; s < 20; ++s) sa += s16(q, s, ROGUE_STAT_GOALIE_SA);
+    const int d = std::abs(sa - own_sog) + std::abs(sog - own_sa);
+    if (d < best_d) { best_d = d; opp = t; }
+  }
+  if (opp >= 0) {
+    const uint8_t* q = HostP(base, g_tab[opp].load());
+    for (int s = 18; s < 20; ++s) b.team_gf += s16(q, s, ROGUE_STAT_GOALIE_GA);
+    b.gf_from_goalie = true;
+  } else {
+    b.team_gf = own_goals;  // misses simulated goals
+  }
+  b.goals = s16(h, b.slot, ROGUE_STAT_GOALS);
+  b.assists = s16(h, b.slot, ROGUE_STAT_ASSISTS);
+  b.pim = s16(h, b.slot, ROGUE_STAT_PIM);
+  b.plus_minus = s16(h, b.slot, 0);
+  b.shots = s16(h, b.slot, ROGUE_STAT_SOG);
+  b.hits = s16(h, b.slot, ROGUE_STAT_HITS);
+  b.toi = s16(h, b.slot, ROGUE_STAT_TOI);
+  b.record_va = pm0 + kRec * uint32_t(b.slot);
+  b.ambiguous = !b.identified;
+  b.valid = b.team_gf >= 0 && b.team_gf <= 30 && b.team_ga >= 0 && b.team_ga <= 30;
+#endif
+  return b;
+}
+
+// Probe only: raw bytes of the pro's record (+/- word at offset 44 of the dump), for the TOI hunt.
+void DumpBoxRecord(char* out, size_t n, uint32_t pm_va, int from, int len) {
+  if (n) out[0] = 0;
+  uint8_t* base = VBase();
+  if (!base || !pm_va || !HostReadable(HostP(base, pm_va - 44u), 88)) return;
+  size_t w = 0;
+  for (int i = from; i < from + len && w + 3 < n; ++i)
+    w += size_t(std::snprintf(out + w, n - w, "%02X", LoadU8(base, pm_va - 44u + uint32_t(i))));
 }
 }  // namespace rogue
 
@@ -582,6 +943,127 @@ extern "C" REX_FUNC(sub_833B9028) {
   if (probe) rogue::probe::ReactionChosen(in, used, ctx.r3.u32, lr);
 }
 #endif
+
+// ---------------------------------------------------------------- pro-only tunable perks (round 25)
+// Owner 2026-11-04: with shot perks owned, EVERY player shot harder (the perks wrote global tunables).
+// Now kProTunable perks are never written globally. Their tunables are raised only for the duration of a call
+// of the game function that reads them, and only when the pro is one of its arguments (r3..r10):
+//   sub_833E87E0  shot: gSlapShotPowerScale, gSlapShotAccuracyScale, gBackhand / gRedirect accuracy (static
+//                 readers, tunable_readers.tsv; it also reads rating 27 for the shooter)
+//   sub_833ECF68  wrist shot power (re-findings.md TUN-8 note; gWristShotPowerMultiplier has no static reader,
+//                 so Quick Release may still do nothing)
+//   (round 27: Jet Skates moved to the rating override below; the speed boost hook never saw the pro)
+// HYPOTHESIS: the shooter / skater is passed in a register. The panel shows calls and "yours" per hook: if
+// "yours" stays 0 while you shoot, the pro is not an argument and the perk does nothing for anyone.
+// Caveat: another thread reading the tunable during the pro's call would see the raised value (none known).
+namespace {
+std::atomic<unsigned> g_pt_calls[3], g_pt_mine[3];
+std::atomic<int> g_pt_reg[3];
+class ProScope {
+ public:
+  ProScope(int hook, const PPCContext& ctx) {
+    g_pt_calls[hook].fetch_add(1, std::memory_order_relaxed);
+    const uint32_t pro = rogue::CachedPro();
+    if (!pro) return;
+    const uint32_t regs[8] = {ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32,
+                              ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32};
+    int hit = -1;
+    for (int i = 0; i < 8 && hit < 0; ++i) if (regs[i] == pro) hit = i;
+    if (hit < 0) return;
+    g_pt_mine[hook].fetch_add(1, std::memory_order_relaxed);
+    g_pt_reg[hook].store(3 + hit, std::memory_order_relaxed);
+    rogue::TweakIndex& t = rogue::TweakIndex::Get();
+    if (!t.Ready()) return;
+    for (const rogue::OwnedPerk& op : rogue::Run().run().perks) {
+      const rogue::PerkDef* p = rogue::FindPerk(op.id.c_str());
+      if (!p || p->scope != rogue::Scope::kProTunable) continue;
+      for (const rogue::Mod& mo : p->mods) {
+        const rogue::TweakRef* r = t.Find(mo.tunable);
+        if (!r || !rogue::ScalarTag(r->tag)) continue;
+        int k = -1;
+        for (int j = 0; j < n_ && k < 0; ++j) if (saved_[j].r == r) k = j;
+        if (k < 0) {
+          if (n_ >= kMax) continue;
+          saved_[n_] = Saved{r, t.Read(*r)};
+          k = n_++;
+        }
+        float v = rogue::BitsToF(t.Read(*r), r->tag);
+        for (int s = 0; s < op.stacks; ++s)
+          v = mo.op == rogue::ModOp::kMul ? v * mo.value : mo.op == rogue::ModOp::kAdd ? v + mo.value : mo.value;
+        t.Write(*r, rogue::FToBits(v, r->tag));
+      }
+    }
+  }
+  ~ProScope() {
+    rogue::TweakIndex& t = rogue::TweakIndex::Get();
+    for (int i = n_ - 1; i >= 0; --i) t.Write(*saved_[i].r, saved_[i].bits);
+  }
+  ProScope(const ProScope&) = delete;
+  ProScope& operator=(const ProScope&) = delete;
+
+ private:
+  struct Saved { const rogue::TweakRef* r; uint32_t bits; };
+  static constexpr int kMax = 16;
+  Saved saved_[kMax];
+  int n_ = 0;
+};
+}  // namespace
+
+namespace rogue {
+void ProTunableStats(int hook, unsigned* calls, unsigned* mine, int* reg) {
+  if (hook < 0 || hook > 2) return;
+  *calls = g_pt_calls[hook].load();
+  *mine = g_pt_mine[hook].load();
+  *reg = g_pt_reg[hook].load();
+}
+void ProTunableReset() {
+  for (int i = 0; i < 3; ++i) { g_pt_calls[i] = 0; g_pt_mine[i] = 0; g_pt_reg[i] = 0; }
+}
+}  // namespace rogue
+
+// Literal names (one override per function in the whole program; none of these is overridden elsewhere,
+// checked 2026-11-04 against the mod and the parent src/).
+REX_EXTERN(__imp__sub_833E87E0);
+extern "C" REX_FUNC(sub_833E87E0) {
+  ProScope scope(0, ctx);
+  __imp__sub_833E87E0(ctx, base);
+}
+REX_EXTERN(__imp__sub_833ECF68);
+extern "C" REX_FUNC(sub_833ECF68) {
+  ProScope scope(1, ctx);
+  __imp__sub_833ECF68(ctx, base);
+}
+// Round 27: the speed boost function sub_828B9258 never had the pro in its arguments (round 26: tens of
+// thousands of calls, 0 yours, mostly around cut-scenes), so its hook is gone. Jet Skates now boosts the pro's
+// own skating ratings through the effective-rating function sub_83501A68(player r3, rating id r4) -> f1
+// (static-map.md 12 / 13: 115 callers, per-player by construction; id 0 speed, 1 acceleration, CONFIRMED map).
+// Behaviour test: the float's scale is not known; perk numbers are moderate on purpose. Counter slot 2.
+float RatingScale(uint32_t id) {
+  float k = 1.f;
+  for (const rogue::OwnedPerk& op : rogue::Run().run().perks) {
+    const rogue::PerkDef* p = rogue::FindPerk(op.id.c_str());
+    if (!p) continue;
+    for (const rogue::EventEffect& e : p->events)
+      if ((e.kind == rogue::EventKind::kRatingBoost ||
+           (e.kind == rogue::EventKind::kSprintRatingBoost && rogue::SprintHeld())) &&
+          uint32_t(e.p0) == id)
+        for (int s = 0; s < op.stacks; ++s) k *= e.p1;
+  }
+  return k;
+}
+REX_EXTERN(__imp__sub_83501A68);
+extern "C" REX_FUNC(sub_83501A68) {
+  const uint32_t player = ctx.r3.u32, id = ctx.r4.u32;
+  __imp__sub_83501A68(ctx, base);
+  const uint32_t pro = rogue::CachedPro();
+  if (!pro) return;
+  g_pt_calls[2].fetch_add(1, std::memory_order_relaxed);
+  if (player != pro) return;
+  g_pt_mine[2].fetch_add(1, std::memory_order_relaxed);
+  g_pt_reg[2].store(3, std::memory_order_relaxed);
+  const float k = RatingScale(id);
+  if (k != 1.f) ctx.f1.f64 *= double(k);
+}
 
 // ---------------------------------------------------------------- penalties (perk Untouchable)
 // Penalty decision sub_83487DC0(official, rec, contact): rec +4 offender, +8 victim, +12 contact type;
